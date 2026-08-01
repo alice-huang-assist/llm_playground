@@ -5,9 +5,12 @@ import styles from "./SystemPrompt.module.css";
 export default function SystemPrompt({
   value,
   onChange,
+  onCommit,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /** Fired when editing settles, so the prompt can be saved without churn. */
+  onCommit?: () => void;
 }) {
   return (
     <div className={styles.wrapper}>
@@ -20,6 +23,7 @@ export default function SystemPrompt({
         rows={3}
         value={value}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={() => onCommit?.()}
         placeholder="Instructions the model receives before the conversation"
       />
     </div>
