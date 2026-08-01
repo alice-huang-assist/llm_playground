@@ -12,10 +12,13 @@ function modelKey(model: Model) {
 
 export default function ModelPicker({
   reloadToken = 0,
+  onChange,
   onLoad,
 }: {
   /** Changing this re-runs discovery, so a fresh install shows up in place. */
   reloadToken?: number;
+  /** Notified whenever the selection changes, so a parent can chat with it. */
+  onChange?: (model: Model | null) => void;
   /** Reports each listing, so a parent can react to provider reachability. */
   onLoad?: (providers: ProviderModels[]) => void;
 } = {}) {
@@ -74,7 +77,11 @@ export default function ModelPicker({
         id="model"
         className={styles.select}
         value={selectedKey}
-        onChange={(event) => setSelectedKey(event.target.value)}
+        onChange={(event) => {
+          const key = event.target.value;
+          setSelectedKey(key);
+          onChange?.(models.find((model) => modelKey(model) === key) ?? null);
+        }}
         disabled={models.length === 0}
       >
         <option value="">
