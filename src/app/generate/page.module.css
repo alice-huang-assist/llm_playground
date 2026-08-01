@@ -160,6 +160,7 @@
 }
 
 .preview {
+  position: relative;
   min-height: 16rem;
   display: flex;
   align-items: center;
@@ -173,6 +174,30 @@
   display: block;
   max-width: 100%;
   height: auto;
+}
+
+.previewProgress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.75rem;
+  background: color-mix(in srgb, Canvas 88%, transparent);
+  border-top: 1px solid currentColor;
+  font-size: 0.8125rem;
+}
+
+.previewProgressLabel {
+  font-variant-numeric: tabular-nums;
+  min-width: 4.5rem;
+}
+
+.previewProgressBar {
+  width: 100%;
 }
 
 .refPreview {

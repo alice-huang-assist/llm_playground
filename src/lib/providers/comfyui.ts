@@ -13,6 +13,10 @@ import {
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
 } from "@/lib/providers/comfyui-shared";
+import {
+  progressPercentFromCounts,
+  type ImageGenerationProgress,
+} from "@/lib/providers/image-progress";
 
 export {
   COMFYUI_BASE_URL_KEY,
@@ -22,6 +26,8 @@ export {
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
 };
+
+export type { ImageGenerationProgress };
 
 export interface ComfyModel {
   id: string;
@@ -40,6 +46,7 @@ export interface ComfyTxt2ImgRequest {
   /** Concrete seed (ComfyUI always wants a number). */
   seed: number;
   signal?: AbortSignal;
+  onProgress?: (progress: ImageGenerationProgress) => void;
 }
 
 export interface ComfyImg2ImgRequest extends ComfyTxt2ImgRequest {
@@ -326,7 +333,13 @@ export async function comfyTxt2Img(
   request: ComfyTxt2ImgRequest,
   baseUrl: string = getComfyBaseUrl(),
 ): Promise<ComfyTxt2ImgResult> {
-  return runComfyWorkflow(buildTxt2ImgWorkflow(request), request.seed, baseUrl, request.signal);
+  return runComfyWorkflow(
+    buildTxt2ImgWorkflow(request),
+    request.seed,
+    baseUrl,
+    request.signal,
+    request.onProgress,
+  );
 }
 
 export async function uploadComfyImage(
@@ -376,7 +389,98 @@ export async function comfyImg2Img(
     request.seed,
     baseUrl,
     request.signal,
+    request.onProgress,
   );
+}
+
+/** Map ComfyUI base HTTP URL to its websocket endpoint. Exported for tests. */
+export function comfyWebSocketUrl(baseUrl: string, clientId: string): string {
+  const wsBase = baseUrl.replace(/^http/i, "ws");
+  return `${wsBase}/ws?clientId=${encodeURIComponent(clientId)}`;
+}
+
+/** Parse a ComfyUI websocket JSON message into progress, or null. */
+export function parseComfyProgressMessage(
+  raw: unknown,
+  promptId: string,
+): ImageGenerationProgress | null {
+  if (!raw || typeof raw !== "object") return null;
+  const message = raw as { type?: unknown; data?: unknown };
+  if (message.type !== "progress" || !message.data || typeof message.data !== "object") {
+    return null;
+  }
+  const data = message.data as {
+    value?: unknown;
+    max?: unknown;
+    prompt_id?: unknown;
+  };
+  if (typeof data.prompt_id === "string" && data.prompt_id !== promptId) {
+    return null;
+  }
+  if (typeof data.value !== "number" || typeof data.max !== "number") {
+    return null;
+  }
+  return { percent: progressPercentFromCounts(data.value, data.max) };
+}
+
+function openComfyProgressSocket(
+  baseUrl: string,
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<WebSocket | null> {
+  if (typeof WebSocket === "undefined") return Promise.resolve(null);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(comfyWebSocketUrl(baseUrl, clientId));
+    } catch {
+      resolve(null);
+      return;
+    }
+
+    const finish = (socket: WebSocket | null) => {
+      if (settled) return;
+      settled = true;
+      resolve(socket);
+    };
+
+    const onAbort = () => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      finish(null);
+    };
+
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+      finish(null);
+    }, 2000);
+
+    ws.addEventListener("open", () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      finish(ws);
+    });
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      finish(null);
+    });
+  });
 }
 
 async function runComfyWorkflow(
@@ -384,91 +488,131 @@ async function runComfyWorkflow(
   seed: number,
   baseUrl: string,
   signal?: AbortSignal,
+  onProgress?: (progress: ImageGenerationProgress) => void,
 ): Promise<ComfyTxt2ImgResult> {
   const clientId = crypto.randomUUID();
+  const socket =
+    onProgress !== undefined
+      ? await openComfyProgressSocket(baseUrl, clientId, signal)
+      : null;
 
-  const queueResponse = await comfyFetch(baseUrl, "/prompt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt: workflow, client_id: clientId }),
-    signal,
-  });
-  const queued = (await queueResponse.json()) as {
-    prompt_id?: unknown;
-    error?: unknown;
-  };
-  if (typeof queued.prompt_id !== "string" || queued.prompt_id === "") {
-    throw new Error("ComfyUI did not return a prompt_id.");
-  }
-  const promptId = queued.prompt_id;
-
-  let imageMeta: { filename: string; subfolder: string; type: string } | null =
-    null;
-
-  for (let attempt = 0; attempt < 600; attempt += 1) {
-    if (signal?.aborted) {
-      throw new DOMException("Aborted", "AbortError");
+  let promptIdForProgress = "";
+  const onMessage = (event: MessageEvent) => {
+    if (typeof event.data !== "string" || !onProgress || promptIdForProgress === "") {
+      return;
     }
+    try {
+      const parsed = JSON.parse(event.data) as unknown;
+      const progress = parseComfyProgressMessage(parsed, promptIdForProgress);
+      if (progress) onProgress(progress);
+    } catch {
+      /* ignore malformed frames */
+    }
+  };
+  socket?.addEventListener("message", onMessage);
 
-    const historyResponse = await comfyFetch(
-      baseUrl,
-      `/history/${encodeURIComponent(promptId)}`,
-      { signal },
-    );
-    const history = (await historyResponse.json()) as Record<
-      string,
-      {
-        status?: { status_str?: string; completed?: boolean };
-        outputs?: Record<
-          string,
-          { images?: Array<{ filename?: string; subfolder?: string; type?: string }> }
-        >;
+  const closeSocket = () => {
+    socket?.removeEventListener("message", onMessage);
+    try {
+      socket?.close();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  try {
+    const queueResponse = await comfyFetch(baseUrl, "/prompt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: workflow, client_id: clientId }),
+      signal,
+    });
+    const queued = (await queueResponse.json()) as {
+      prompt_id?: unknown;
+      error?: unknown;
+    };
+    if (typeof queued.prompt_id !== "string" || queued.prompt_id === "") {
+      throw new Error("ComfyUI did not return a prompt_id.");
+    }
+    const promptId = queued.prompt_id;
+    promptIdForProgress = promptId;
+
+    let imageMeta: { filename: string; subfolder: string; type: string } | null =
+      null;
+
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
       }
-    >;
 
-    const entry = history[promptId];
-    if (entry?.outputs) {
-      for (const output of Object.values(entry.outputs)) {
-        const image = output.images?.[0];
-        if (image?.filename) {
-          imageMeta = {
-            filename: image.filename,
-            subfolder: image.subfolder ?? "",
-            type: image.type ?? "output",
-          };
-          break;
+      const historyResponse = await comfyFetch(
+        baseUrl,
+        `/history/${encodeURIComponent(promptId)}`,
+        { signal },
+      );
+      const history = (await historyResponse.json()) as Record<
+        string,
+        {
+          status?: { status_str?: string; completed?: boolean };
+          outputs?: Record<
+            string,
+            {
+              images?: Array<{
+                filename?: string;
+                subfolder?: string;
+                type?: string;
+              }>;
+            }
+          >;
+        }
+      >;
+
+      const entry = history[promptId];
+      if (entry?.outputs) {
+        for (const output of Object.values(entry.outputs)) {
+          const image = output.images?.[0];
+          if (image?.filename) {
+            imageMeta = {
+              filename: image.filename,
+              subfolder: image.subfolder ?? "",
+              type: image.type ?? "output",
+            };
+            break;
+          }
         }
       }
+
+      if (imageMeta) break;
+
+      const status = entry?.status?.status_str;
+      if (status === "error") {
+        throw new Error("ComfyUI reported an error while generating.");
+      }
+
+      await sleep(500, signal);
     }
 
-    if (imageMeta) break;
-
-    const status = entry?.status?.status_str;
-    if (status === "error") {
-      throw new Error("ComfyUI reported an error while generating.");
+    if (!imageMeta) {
+      throw new Error("ComfyUI timed out waiting for an image.");
     }
 
-    await sleep(500, signal);
+    const params = new URLSearchParams({
+      filename: imageMeta.filename,
+      subfolder: imageMeta.subfolder,
+      type: imageMeta.type,
+    });
+    const viewResponse = await comfyFetch(baseUrl, `/view?${params}`, {
+      signal,
+    });
+    const bytes = Buffer.from(await viewResponse.arrayBuffer());
+
+    return {
+      imageBase64: bytes.toString("base64"),
+      seed,
+    };
+  } finally {
+    closeSocket();
   }
-
-  if (!imageMeta) {
-    throw new Error("ComfyUI timed out waiting for an image.");
-  }
-
-  const params = new URLSearchParams({
-    filename: imageMeta.filename,
-    subfolder: imageMeta.subfolder,
-    type: imageMeta.type,
-  });
-  const viewResponse = await comfyFetch(baseUrl, `/view?${params}`, {
-    signal,
-  });
-  const bytes = Buffer.from(await viewResponse.arrayBuffer());
-
-  return {
-    imageBase64: bytes.toString("base64"),
-    seed,
-  };
 }
 
 export async function interruptComfy(

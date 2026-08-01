@@ -7,6 +7,7 @@ import {
   listForgeModels,
   listForgeSamplers,
   normalizeForgeBaseUrl,
+  parseForgeProgressPayload,
   resolveForgeBaseUrl,
 } from "@/lib/providers/forge";
 
@@ -91,6 +92,22 @@ describe("buildImg2ImgPayload", () => {
       denoising_strength: 0.55,
       prompt: "a cat",
     });
+  });
+});
+
+describe("parseForgeProgressPayload", () => {
+  it("maps progress and optional current_image", () => {
+    expect(
+      parseForgeProgressPayload({
+        progress: 0.42,
+        current_image: "abc",
+      }),
+    ).toEqual({ percent: 42, currentImageBase64: "abc" });
+
+    expect(parseForgeProgressPayload({ progress: 0.1 })).toEqual({
+      percent: 10,
+    });
+    expect(parseForgeProgressPayload({})).toBeNull();
   });
 });
 
