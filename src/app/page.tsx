@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import Chat from "@/components/Chat";
@@ -8,11 +7,8 @@ import ModelInstaller from "@/components/ModelInstaller";
 import ModelPicker from "@/components/ModelPicker";
 import ParameterSidebar from "@/components/ParameterSidebar";
 import SessionSidebar from "@/components/SessionSidebar";
-import ThemeToggle from "@/components/ThemeToggle";
 import type { Session, SessionMessage, SessionSummary } from "@/lib/db/sessions";
 import { DEFAULT_PARAMETERS, type ParameterValues } from "@/lib/params";
-import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
-import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 import { OLLAMA_PROVIDER_ID } from "@/lib/providers/ollama";
 import type { Model, ProviderModels } from "@/lib/providers/types";
 
@@ -142,35 +138,7 @@ export default function Home() {
   const modelKey = model ? `${model.providerId}:${model.id}` : "";
 
   return (
-    <main className={styles.main}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>LLM Playground</h1>
-        <nav className={styles.nav}>
-          <Link className={styles.navLink} href="/generate">
-            Images
-          </Link>
-          <Link className={styles.navLink} href="/settings">
-            Settings
-          </Link>
-          <a
-            className={styles.navLink}
-            href={DEFAULT_FORGE_BASE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Forge
-          </a>
-          <a
-            className={styles.navLink}
-            href={DEFAULT_COMFYUI_BASE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ComfyUI
-          </a>
-          <ThemeToggle />
-        </nav>
-      </div>
+    <div className={styles.main}>
       <p className={styles.subtitle}>
         Models discovered across your local runtimes.
       </p>
@@ -213,6 +181,6 @@ export default function Home() {
           <ParameterSidebar values={parameters} onChange={setParameters} />
         </div>
       </div>
-    </main>
+    </div>
   );
 }

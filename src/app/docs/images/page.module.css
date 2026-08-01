@@ -8,29 +8,6 @@
   max-width: 44rem;
 }
 
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.nav {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.link {
-  font-size: 0.875rem;
-  text-decoration: underline;
-}
-
-.title {
-  font-size: 1.75rem;
-  font-weight: 700;
-}
-
 .section {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import ThemeToggle from "@/components/ThemeToggle";
 import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
 import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 
@@ -8,39 +7,7 @@ import styles from "./page.module.css";
 
 export default function ImagesDocsPage() {
   return (
-    <main className={styles.main}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Images playground</h1>
-        <nav className={styles.nav}>
-          <Link className={styles.link} href="/generate">
-            Open Images
-          </Link>
-          <Link className={styles.link} href="/settings">
-            Settings
-          </Link>
-          <a
-            className={styles.link}
-            href={DEFAULT_FORGE_BASE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Forge
-          </a>
-          <a
-            className={styles.link}
-            href={DEFAULT_COMFYUI_BASE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ComfyUI
-          </a>
-          <Link className={styles.link} href="/">
-            Chat
-          </Link>
-          <ThemeToggle />
-        </nav>
-      </div>
-
+    <div className={styles.main}>
       <section className={styles.section}>
         <h2 className={styles.heading}>Setup (bundled — Apple Silicon)</h2>
         <p className={styles.copy}>
@@ -188,6 +155,6 @@ export default function ImagesDocsPage() {
           </li>
         </ul>
       </section>
-    </main>
+    </div>
   );
 }

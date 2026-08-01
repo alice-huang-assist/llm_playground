@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import ThemeToggle from "@/components/ThemeToggle";
 import {
   DEFAULT_COMFYUI_BASE_URL,
   normalizeComfyBaseUrl,
@@ -168,36 +167,7 @@ export default function SettingsPage() {
     normalizeComfyBaseUrl(comfyUrl) ?? DEFAULT_COMFYUI_BASE_URL;
 
   return (
-    <main className={styles.main}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Settings</h1>
-        <nav className={styles.nav}>
-          <Link className={styles.back} href="/">
-            Chat
-          </Link>
-          <Link className={styles.back} href="/generate">
-            Images
-          </Link>
-          <a
-            className={styles.back}
-            href={forgeOpenHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Forge
-          </a>
-          <a
-            className={styles.back}
-            href={comfyOpenHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ComfyUI
-          </a>
-          <ThemeToggle />
-        </nav>
-      </div>
-
+    <div className={styles.main}>
       <section className={styles.section}>
         <h2 className={styles.heading}>Forge (image generation)</h2>
         <p className={styles.note}>
@@ -335,6 +305,6 @@ export default function SettingsPage() {
 
       {error && <p className={styles.error}>{error}</p>}
       {notice && <p className={styles.notice}>{notice}</p>}
-    </main>
+    </div>
   );
 }
