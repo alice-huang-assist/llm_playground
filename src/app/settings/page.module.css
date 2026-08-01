@@ -20,6 +20,11 @@
   font-weight: 700;
 }
 
+.nav {
+  display: flex;
+  gap: 1rem;
+}
+
 .back {
   font-size: 0.875rem;
   text-decoration: underline;
