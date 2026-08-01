@@ -54,7 +54,7 @@ In-app copy of this guide: [`/docs/images`](http://localhost:3000/docs/images).
 2. Put at least one open-weight checkpoint in ComfyUI’s models folder.
 3. In **Settings**, set the ComfyUI base URL if needed.
 
-Img2img (reference upload) is a follow-up — not in this release.
+Img2img is supported via an optional reference upload on `/generate`.
 
 ### How to use
 
@@ -62,7 +62,10 @@ Img2img (reference upload) is a follow-up — not in this release.
 2. Choose provider **Forge** or **ComfyUI** and a checkpoint.
 3. Enter a prompt (optional negative prompt). Adjust width, height, steps, CFG,
    sampler, and seed (empty seed = random). ComfyUI uses a fixed txt2img
-   workflow (scheduler fixed to `normal`).
+   workflow (scheduler fixed to `normal`). Optionally attach a **reference
+   image** for img2img (denoising strength appears); clear it to return to
+   text-to-image. History records that a reference was used but does not
+   re-hydrate the file.
 4. Click **Generate**. **Stop** cancels the run; cancelled runs are not saved.
 5. History (right rail) stores successful generations on disk under
    `data/generations/` plus SQLite metadata (shared across providers). Click an

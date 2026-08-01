@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildImg2ImgWorkflow,
   buildTxt2ImgWorkflow,
   comfyTxt2Img,
   listComfyModels,
@@ -65,6 +66,33 @@ describe("buildTxt2ImgWorkflow", () => {
           scheduler: "normal",
           denoise: 1,
         },
+      },
+    });
+  });
+});
+
+describe("buildImg2ImgWorkflow", () => {
+  it("uses LoadImage + VAEEncode and the given denoise", () => {
+    expect(
+      buildImg2ImgWorkflow({
+        model: "model.safetensors",
+        prompt: "edit me",
+        negativePrompt: "",
+        width: 512,
+        height: 512,
+        steps: 15,
+        cfgScale: 7,
+        sampler: "euler",
+        seed: 3,
+        imageName: "ref.png",
+        denoisingStrength: 0.4,
+      }),
+    ).toMatchObject({
+      "2": { class_type: "LoadImage", inputs: { image: "ref.png" } },
+      "3": { class_type: "VAEEncode" },
+      "6": {
+        class_type: "KSampler",
+        inputs: { denoise: 0.4, sampler_name: "euler" },
       },
     });
   });

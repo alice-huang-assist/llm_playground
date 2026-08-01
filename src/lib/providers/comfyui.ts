@@ -30,6 +30,12 @@ export interface ComfyTxt2ImgRequest {
   signal?: AbortSignal;
 }
 
+export interface ComfyImg2ImgRequest extends ComfyTxt2ImgRequest {
+  /** Filename as known to ComfyUI after /upload/image. */
+  imageName: string;
+  denoisingStrength: number;
+}
+
 export interface ComfyTxt2ImgResult {
   imageBase64: string;
   seed: number;
@@ -111,6 +117,63 @@ export function buildTxt2ImgWorkflow(
       inputs: {
         filename_prefix: "llm_playground",
         images: ["8", 0],
+      },
+    },
+  };
+}
+
+/**
+ * Fixed LoadImage → VAEEncode → KSampler(denoise) → VAEDecode → SaveImage.
+ * `imageName` is the filename returned by ComfyUI's `/upload/image`.
+ */
+export function buildImg2ImgWorkflow(
+  request: ComfyImg2ImgRequest,
+): Record<string, unknown> {
+  return {
+    "1": {
+      class_type: "CheckpointLoaderSimple",
+      inputs: { ckpt_name: request.model },
+    },
+    "2": {
+      class_type: "LoadImage",
+      inputs: { image: request.imageName },
+    },
+    "3": {
+      class_type: "VAEEncode",
+      inputs: { pixels: ["2", 0], vae: ["1", 2] },
+    },
+    "4": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.prompt, clip: ["1", 1] },
+    },
+    "5": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["1", 1] },
+    },
+    "6": {
+      class_type: "KSampler",
+      inputs: {
+        seed: request.seed,
+        steps: request.steps,
+        cfg: request.cfgScale,
+        sampler_name: request.sampler,
+        scheduler: "normal",
+        denoise: request.denoisingStrength,
+        model: ["1", 0],
+        positive: ["4", 0],
+        negative: ["5", 0],
+        latent_image: ["3", 0],
+      },
+    },
+    "7": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["6", 0], vae: ["1", 2] },
+    },
+    "8": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "llm_playground_i2i",
+        images: ["7", 0],
       },
     },
   };
@@ -200,14 +263,72 @@ export async function comfyTxt2Img(
   request: ComfyTxt2ImgRequest,
   baseUrl: string = getComfyBaseUrl(),
 ): Promise<ComfyTxt2ImgResult> {
+  return runComfyWorkflow(buildTxt2ImgWorkflow(request), request.seed, baseUrl, request.signal);
+}
+
+export async function uploadComfyImage(
+  bytes: Buffer,
+  filename: string,
+  baseUrl: string = getComfyBaseUrl(),
+  signal?: AbortSignal,
+): Promise<string> {
+  const form = new FormData();
+  form.append(
+    "image",
+    new Blob([new Uint8Array(bytes)]),
+    filename,
+  );
+  form.append("overwrite", "true");
+
+  const response = await fetch(`${baseUrl}/upload/image`, {
+    method: "POST",
+    body: form,
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`ComfyUI upload failed with ${response.status}`);
+  }
+  const payload = (await response.json()) as { name?: unknown };
+  if (typeof payload.name !== "string" || payload.name === "") {
+    throw new Error("ComfyUI upload did not return an image name.");
+  }
+  return payload.name;
+}
+
+export async function comfyImg2Img(
+  request: Omit<ComfyImg2ImgRequest, "imageName"> & {
+    imageBytes: Buffer;
+    imageFilename: string;
+  },
+  baseUrl: string = getComfyBaseUrl(),
+): Promise<ComfyTxt2ImgResult> {
+  const imageName = await uploadComfyImage(
+    request.imageBytes,
+    request.imageFilename,
+    baseUrl,
+    request.signal,
+  );
+  return runComfyWorkflow(
+    buildImg2ImgWorkflow({ ...request, imageName }),
+    request.seed,
+    baseUrl,
+    request.signal,
+  );
+}
+
+async function runComfyWorkflow(
+  workflow: Record<string, unknown>,
+  seed: number,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<ComfyTxt2ImgResult> {
   const clientId = crypto.randomUUID();
-  const workflow = buildTxt2ImgWorkflow(request);
 
   const queueResponse = await comfyFetch(baseUrl, "/prompt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt: workflow, client_id: clientId }),
-    signal: request.signal,
+    signal,
   });
   const queued = (await queueResponse.json()) as {
     prompt_id?: unknown;
@@ -222,14 +343,14 @@ export async function comfyTxt2Img(
     null;
 
   for (let attempt = 0; attempt < 600; attempt += 1) {
-    if (request.signal?.aborted) {
+    if (signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
 
     const historyResponse = await comfyFetch(
       baseUrl,
       `/history/${encodeURIComponent(promptId)}`,
-      { signal: request.signal },
+      { signal },
     );
     const history = (await historyResponse.json()) as Record<
       string,
@@ -264,7 +385,7 @@ export async function comfyTxt2Img(
       throw new Error("ComfyUI reported an error while generating.");
     }
 
-    await sleep(500, request.signal);
+    await sleep(500, signal);
   }
 
   if (!imageMeta) {
@@ -277,13 +398,13 @@ export async function comfyTxt2Img(
     type: imageMeta.type,
   });
   const viewResponse = await comfyFetch(baseUrl, `/view?${params}`, {
-    signal: request.signal,
+    signal,
   });
   const bytes = Buffer.from(await viewResponse.arrayBuffer());
 
   return {
     imageBase64: bytes.toString("base64"),
-    seed: request.seed,
+    seed,
   };
 }
 

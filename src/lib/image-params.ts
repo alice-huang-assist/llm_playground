@@ -35,6 +35,11 @@ const STEPS_MIN = 1;
 const STEPS_MAX = 150;
 const CFG_MIN = 1;
 const CFG_MAX = 30;
+const STRENGTH_MIN = 0.01;
+const STRENGTH_MAX = 1;
+export const DEFAULT_DENOISING_STRENGTH = 0.75;
+/** Hard cap on reference image decoded bytes (AC-7). */
+export const MAX_REFERENCE_BYTES = 10 * 1024 * 1024;
 
 function roundToStep(value: number, step: number): number {
   return Math.round(value / step) * step;
@@ -86,4 +91,85 @@ export function clampImageParams(
 /** Seed value for Forge: -1 when unset (random). */
 export function forgeSeed(seed: number | null): number {
   return seed === null ? -1 : seed;
+}
+
+export function clampDenoisingStrength(
+  value: unknown,
+  fallback: number = DEFAULT_DENOISING_STRENGTH,
+): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const clamped = Math.min(STRENGTH_MAX, Math.max(STRENGTH_MIN, numeric));
+  return Math.round(clamped * 1000) / 1000;
+}
+
+export type ReferenceKind = "png" | "jpeg" | "webp";
+
+export interface ParsedReferenceImage {
+  bytes: Buffer;
+  kind: ReferenceKind;
+  /** Raw base64 without data-URL prefix, for Forge. */
+  base64: string;
+}
+
+function detectKind(bytes: Buffer): ReferenceKind | null {
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "jpeg";
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes.toString("ascii", 0, 4) === "RIFF" &&
+    bytes.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "webp";
+  }
+  return null;
+}
+
+/**
+ * Parse a browser data-URL or raw base64 reference image. Rejects oversized
+ * or non-image payloads.
+ */
+export function parseReferenceImage(value: unknown): ParsedReferenceImage | { error: string } {
+  if (typeof value !== "string" || value.trim() === "") {
+    return { error: "Reference image data is required when provided." };
+  }
+
+  let base64 = value.trim();
+  const dataUrl = /^data:image\/(png|jpeg|jpg|webp);base64,/i.exec(base64);
+  if (dataUrl) {
+    base64 = base64.slice(dataUrl[0].length);
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64, "base64");
+  } catch {
+    return { error: "Reference image must be valid base64." };
+  }
+
+  if (bytes.length === 0) {
+    return { error: "Reference image is empty." };
+  }
+  if (bytes.length > MAX_REFERENCE_BYTES) {
+    return {
+      error: `Reference image must be at most ${MAX_REFERENCE_BYTES / (1024 * 1024)} MB.`,
+    };
+  }
+
+  const kind = detectKind(bytes);
+  if (kind === null) {
+    return { error: "Reference image must be a PNG, JPEG, or WebP file." };
+  }
+
+  return { bytes, kind, base64 };
 }

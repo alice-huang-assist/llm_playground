@@ -4,21 +4,24 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
+  DEFAULT_DENOISING_STRENGTH,
   DEFAULT_IMAGE_PARAMS,
+  MAX_REFERENCE_BYTES,
   clampCfgScale,
+  clampDenoisingStrength,
   clampImageSize,
   clampSeed,
   clampSteps,
   type ImageParamValues,
 } from "@/lib/image-params";
 import {
-  FORGE_PROVIDER_ID,
-  FORGE_PROVIDER_NAME,
-} from "@/lib/providers/forge";
-import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
 } from "@/lib/providers/comfyui";
+import {
+  FORGE_PROVIDER_ID,
+  FORGE_PROVIDER_NAME,
+} from "@/lib/providers/forge";
 
 import styles from "./page.module.css";
 
@@ -48,6 +51,8 @@ interface GenerationSummary {
   seed: number | null;
   cfgScale: number;
   sampler: string;
+  usedReference: boolean;
+  denoisingStrength: number | null;
   createdAt: string;
 }
 
@@ -78,6 +83,11 @@ export default function GeneratePage() {
     ...DEFAULT_IMAGE_PARAMS,
   });
   const [seedInput, setSeedInput] = useState("");
+  const [referenceDataUrl, setReferenceDataUrl] = useState<string | null>(null);
+  const [denoisingStrength, setDenoisingStrength] = useState(
+    DEFAULT_DENOISING_STRENGTH,
+  );
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -237,8 +247,54 @@ export default function GeneratePage() {
     });
     setSeedInput(generation.seed === null ? "" : String(generation.seed));
     setSampler(generation.sampler);
+    // Reference bytes are not re-hydrated from history (AC-6); restore strength flag only.
+    setReferenceDataUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setDenoisingStrength(
+      generation.denoisingStrength ?? DEFAULT_DENOISING_STRENGTH,
+    );
     setError(null);
-    setStatus(null);
+    setStatus(
+      generation.usedReference
+        ? "Restored params (re-attach a reference to run img2img again)."
+        : null,
+    );
+  }
+
+  function clearReference() {
+    setReferenceDataUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function onReferenceFile(file: File | null) {
+    if (!file) {
+      clearReference();
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setError("Reference must be an image file (PNG, JPEG, or WebP).");
+      clearReference();
+      return;
+    }
+    if (file.size > MAX_REFERENCE_BYTES) {
+      setError(
+        `Reference image must be at most ${MAX_REFERENCE_BYTES / (1024 * 1024)} MB.`,
+      );
+      clearReference();
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setReferenceDataUrl(reader.result);
+        setError(null);
+      }
+    };
+    reader.onerror = () => {
+      setError("Could not read the reference image.");
+      clearReference();
+    };
+    reader.readAsDataURL(file);
   }
 
   async function generate() {
@@ -266,6 +322,12 @@ export default function GeneratePage() {
           cfgScale: params.cfgScale,
           seed: seedInput.trim() === "" ? null : Number(seedInput),
           sampler,
+          ...(referenceDataUrl
+            ? {
+                referenceImage: referenceDataUrl,
+                denoisingStrength,
+              }
+            : {}),
         }),
       });
 
@@ -338,7 +400,8 @@ export default function GeneratePage() {
         </nav>
       </div>
       <p className={styles.subtitle}>
-        Text-to-image playground for a local Forge / A1111-compatible server.
+        Local Forge / ComfyUI playground — text-to-image, or img2img with an
+        optional reference.
       </p>
 
       <div className={styles.layout}>
@@ -412,6 +475,40 @@ export default function GeneratePage() {
               disabled={busy}
             />
           </label>
+
+          <div className={styles.field}>
+            <span className={styles.label}>
+              Reference image (optional — enables img2img)
+            </span>
+            <div className={styles.actions}>
+              <input
+                ref={fileInputRef}
+                className={styles.input}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={busy}
+                onChange={(event) =>
+                  onReferenceFile(event.target.files?.[0] ?? null)
+                }
+              />
+              <button
+                type="button"
+                className={styles.button}
+                disabled={busy || referenceDataUrl === null}
+                onClick={clearReference}
+              >
+                Clear reference
+              </button>
+            </div>
+            {referenceDataUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className={styles.refPreview}
+                src={referenceDataUrl}
+                alt="Reference preview"
+              />
+            )}
+          </div>
 
           <div className={styles.grid}>
             <label className={styles.field}>
@@ -524,6 +621,25 @@ export default function GeneratePage() {
                 )}
               </select>
             </label>
+            {referenceDataUrl && (
+              <label className={styles.field}>
+                <span className={styles.label}>Denoising strength</span>
+                <input
+                  className={styles.input}
+                  type="number"
+                  min={0.01}
+                  max={1}
+                  step={0.01}
+                  value={denoisingStrength}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setDenoisingStrength(
+                      clampDenoisingStrength(event.target.value),
+                    )
+                  }
+                />
+              </label>
+            )}
           </div>
 
           <div className={styles.actions}>
@@ -596,6 +712,7 @@ export default function GeneratePage() {
                       alt=""
                     />
                     <span className={styles.historyText}>
+                      {item.usedReference ? "img2img · " : ""}
                       {snippet(item.prompt)}
                     </span>
                   </button>

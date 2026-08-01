@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  buildImg2ImgPayload,
   buildTxt2ImgPayload,
   forgeTxt2Img,
   listForgeModels,
@@ -65,6 +66,30 @@ describe("buildTxt2ImgPayload", () => {
       seed: -1,
       override_settings: { sd_model_checkpoint: "sdxl.safetensors" },
       override_settings_restore_afterwards: true,
+    });
+  });
+});
+
+describe("buildImg2ImgPayload", () => {
+  it("includes init image and denoising strength", () => {
+    expect(
+      buildImg2ImgPayload({
+        model: "sdxl.safetensors",
+        prompt: "a cat",
+        negativePrompt: "",
+        width: 512,
+        height: 512,
+        steps: 20,
+        cfgScale: 7,
+        sampler: "Euler a",
+        seed: 1,
+        initImageBase64: "abc",
+        denoisingStrength: 0.55,
+      }),
+    ).toMatchObject({
+      init_images: ["abc"],
+      denoising_strength: 0.55,
+      prompt: "a cat",
     });
   });
 });

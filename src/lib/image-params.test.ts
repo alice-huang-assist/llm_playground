@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  clampDenoisingStrength,
   clampImageParams,
   clampImageSize,
   clampSeed,
   forgeSeed,
+  parseReferenceImage,
 } from "@/lib/image-params";
 
 describe("clampImageSize", () => {
@@ -21,6 +23,35 @@ describe("clampSeed / forgeSeed", () => {
     expect(clampSeed(null)).toBeNull();
     expect(forgeSeed(null)).toBe(-1);
     expect(forgeSeed(7)).toBe(7);
+  });
+});
+
+describe("clampDenoisingStrength", () => {
+  it("clamps into 0.01–1", () => {
+    expect(clampDenoisingStrength(0)).toBe(0.01);
+    expect(clampDenoisingStrength(2)).toBe(1);
+    expect(clampDenoisingStrength(0.55)).toBe(0.55);
+  });
+});
+
+describe("parseReferenceImage", () => {
+  it("accepts a PNG data URL", () => {
+    const png = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00,
+    ]);
+    const result = parseReferenceImage(
+      `data:image/png;base64,${png.toString("base64")}`,
+    );
+    expect(result).toMatchObject({ kind: "png" });
+  });
+
+  it("rejects non-images", () => {
+    const result = parseReferenceImage(
+      `data:image/png;base64,${Buffer.from("hello").toString("base64")}`,
+    );
+    expect(result).toEqual({
+      error: "Reference image must be a PNG, JPEG, or WebP file.",
+    });
   });
 });
 

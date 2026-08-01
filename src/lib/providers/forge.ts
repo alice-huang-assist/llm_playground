@@ -30,6 +30,12 @@ export interface Txt2ImgRequest {
   signal?: AbortSignal;
 }
 
+export interface Img2ImgRequest extends Txt2ImgRequest {
+  /** Raw base64 image (no data-URL prefix). */
+  initImageBase64: string;
+  denoisingStrength: number;
+}
+
 export interface Txt2ImgResult {
   imageBase64: string;
   seed: number | null;
@@ -46,6 +52,11 @@ export interface ForgeTxt2ImgPayload {
   seed: number;
   override_settings: { sd_model_checkpoint: string };
   override_settings_restore_afterwards: true;
+}
+
+export interface ForgeImg2ImgPayload extends ForgeTxt2ImgPayload {
+  init_images: string[];
+  denoising_strength: number;
 }
 
 /** Resolve the configured Forge base URL, falling back to the localhost default. */
@@ -87,6 +98,15 @@ export function buildTxt2ImgPayload(request: Txt2ImgRequest): ForgeTxt2ImgPayloa
       sd_model_checkpoint: request.model,
     },
     override_settings_restore_afterwards: true,
+  };
+}
+
+/** Shape the A1111 img2img body. Exported for unit tests. */
+export function buildImg2ImgPayload(request: Img2ImgRequest): ForgeImg2ImgPayload {
+  return {
+    ...buildTxt2ImgPayload(request),
+    init_images: [request.initImageBase64],
+    denoising_strength: request.denoisingStrength,
   };
 }
 
@@ -149,11 +169,37 @@ export async function forgeTxt2Img(
   request: Txt2ImgRequest,
   baseUrl: string = getForgeBaseUrl(),
 ): Promise<Txt2ImgResult> {
-  const response = await fetch(`${baseUrl}/sdapi/v1/txt2img`, {
+  return forgeGenerateImage(
+    `${baseUrl}/sdapi/v1/txt2img`,
+    buildTxt2ImgPayload(request),
+    request.signal,
+    "txt2img",
+  );
+}
+
+export async function forgeImg2Img(
+  request: Img2ImgRequest,
+  baseUrl: string = getForgeBaseUrl(),
+): Promise<Txt2ImgResult> {
+  return forgeGenerateImage(
+    `${baseUrl}/sdapi/v1/img2img`,
+    buildImg2ImgPayload(request),
+    request.signal,
+    "img2img",
+  );
+}
+
+async function forgeGenerateImage(
+  url: string,
+  body: unknown,
+  signal: AbortSignal | undefined,
+  label: string,
+): Promise<Txt2ImgResult> {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildTxt2ImgPayload(request)),
-    signal: request.signal,
+    body: JSON.stringify(body),
+    signal,
   });
 
   if (!response.ok) {
@@ -164,7 +210,7 @@ export async function forgeTxt2Img(
       /* ignore */
     }
     throw new Error(
-      `Forge txt2img failed with ${response.status}${detail ? `: ${detail}` : ""}`,
+      `Forge ${label} failed with ${response.status}${detail ? `: ${detail}` : ""}`,
     );
   }
 

@@ -94,6 +94,12 @@ export default function ImagesDocsPage() {
             fixed to <code>normal</code> for the ComfyUI workflow.
           </li>
           <li>
+            Optional: attach a <strong>reference image</strong> to run img2img.
+            A denoising strength control appears; Clear reference returns to
+            text-to-image. History remembers that a reference was used but does
+            not re-attach the file — upload again to iterate.
+          </li>
+          <li>
             Click <strong>Generate</strong>. Use <strong>Stop</strong> to cancel;
             cancelled runs are not saved to history.
           </li>

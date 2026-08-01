@@ -72,6 +72,13 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX generations_created_at ON generations (created_at DESC);
     `,
   },
+  {
+    version: 4,
+    up: `
+      ALTER TABLE generations ADD COLUMN used_reference INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE generations ADD COLUMN denoising_strength REAL;
+    `,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.reduce(
