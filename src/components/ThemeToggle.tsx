@@ -11,8 +11,6 @@ import {
   type ThemePreference,
 } from "@/lib/theme";
 
-import styles from "./ThemeToggle.module.css";
-
 const LABELS: Record<ThemePreference, string> = {
   light: "Light",
   dark: "Dark",
@@ -27,18 +25,29 @@ export default function ThemeToggle() {
   );
 
   return (
-    <div className={styles.group} role="group" aria-label="Color theme">
-      {THEME_PREFERENCES.map((option) => (
-        <button
-          key={option}
-          type="button"
-          className={styles.option}
-          aria-pressed={theme === option}
-          onClick={() => setThemePreference(option)}
-        >
-          {LABELS[option]}
-        </button>
-      ))}
+    <div
+      className="inline-flex overflow-hidden rounded-sm border border-border"
+      role="group"
+      aria-label="Color theme"
+    >
+      {THEME_PREFERENCES.map((option) => {
+        const active = theme === option;
+        return (
+          <button
+            key={option}
+            type="button"
+            className={`flex-1 border-r border-border px-2 py-1 text-meta transition-colors last:border-r-0 ${
+              active
+                ? "bg-accent text-on-accent"
+                : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
+            }`}
+            aria-pressed={active}
+            onClick={() => setThemePreference(option)}
+          >
+            {LABELS[option]}
+          </button>
+        );
+      })}
     </div>
   );
 }

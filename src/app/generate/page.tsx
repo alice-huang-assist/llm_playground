@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import ImageLightbox from "@/components/ImageLightbox";
-import ThemeToggle from "@/components/ThemeToggle";
 import {
   DEFAULT_DENOISING_STRENGTH,
   DEFAULT_IMAGE_COUNT,
@@ -24,7 +23,6 @@ import { groupGenerations } from "@/lib/generation-history";
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
-  DEFAULT_COMFYUI_BASE_URL,
   isZImageModel,
   Z_IMAGE_DEFAULT_CFG,
   Z_IMAGE_DEFAULT_SAMPLER,
@@ -95,8 +93,6 @@ export default function GeneratePage() {
   const [reachable, setReachable] = useState(true);
   const [reachError, setReachError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState(DEFAULT_FORGE_BASE_URL);
-  const [forgeUrl, setForgeUrl] = useState(DEFAULT_FORGE_BASE_URL);
-  const [comfyUrl, setComfyUrl] = useState(DEFAULT_COMFYUI_BASE_URL);
 
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -237,14 +233,6 @@ export default function GeneratePage() {
           provider.reachable ? null : (provider.error ?? "Unreachable"),
         );
         setBaseUrl(provider.baseUrl);
-        for (const entry of modelsPayload.providers) {
-          if (entry.providerId === FORGE_PROVIDER_ID) {
-            setForgeUrl(entry.baseUrl);
-          }
-          if (entry.providerId === COMFYUI_PROVIDER_ID) {
-            setComfyUrl(entry.baseUrl);
-          }
-        }
         setModels(provider.models);
         setModelId((current) => {
           if (
@@ -583,35 +571,7 @@ export default function GeneratePage() {
     sampler !== "";
 
   return (
-    <main className={styles.main}>
-      <div className={styles.header}>
-        <h1 className={styles.title}>Images</h1>
-        <nav className={styles.nav}>
-          <Link className={styles.navLink} href="/">
-            Chat
-          </Link>
-          <Link className={styles.navLink} href="/settings">
-            Settings
-          </Link>
-          <a
-            className={styles.navLink}
-            href={forgeUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Forge
-          </a>
-          <a
-            className={styles.navLink}
-            href={comfyUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            ComfyUI
-          </a>
-          <ThemeToggle />
-        </nav>
-      </div>
+    <div className={styles.main}>
       <p className={styles.subtitle}>
         Local Forge / ComfyUI playground — text-to-image, or img2img with an
         optional reference.
@@ -1140,6 +1100,6 @@ export default function GeneratePage() {
           }}
         />
       )}
-    </main>
+    </div>
   );
 }

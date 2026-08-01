@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Figtree, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 
+import AppShell from "@/components/AppShell";
 import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 
 import "./globals.css";
@@ -45,7 +46,9 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} />
       </head>
-      <body>{children}</body>
+      <body>
+        <AppShell>{children}</AppShell>
+      </body>
     </html>
   );
 }
