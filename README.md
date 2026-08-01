@@ -30,9 +30,9 @@ request.
 
 ## Images playground
 
-Sibling feature at `/generate` (nav: **Images**). Talks to a local **Forge** /
-A1111-compatible server over `/sdapi/v1` from the Next.js API only — the browser
-never calls Forge directly.
+Sibling feature at `/generate` (nav: **Images**). Talks to local **Forge**
+(A1111 `/sdapi/v1`) and/or **ComfyUI** from the Next.js API only — the browser
+never calls those servers directly.
 
 In-app copy of this guide: [`/docs/images`](http://localhost:3000/docs/images).
 
@@ -47,20 +47,28 @@ In-app copy of this guide: [`/docs/images`](http://localhost:3000/docs/images).
 4. In the app, open **Settings** and set the Forge base URL if needed (default
    `http://127.0.0.1:7860`).
 
-ComfyUI and img2img are follow-ups — not in this release.
+### Setup (ComfyUI)
+
+1. Install and run [ComfyUI](https://github.com/comfyanonymous/ComfyUI) with the
+   HTTP API (default `http://127.0.0.1:8188`).
+2. Put at least one open-weight checkpoint in ComfyUI’s models folder.
+3. In **Settings**, set the ComfyUI base URL if needed.
+
+Img2img (reference upload) is a follow-up — not in this release.
 
 ### How to use
 
 1. Open **Images** from the chat header (or go to `/generate`).
-2. Choose provider **Forge** and a checkpoint.
+2. Choose provider **Forge** or **ComfyUI** and a checkpoint.
 3. Enter a prompt (optional negative prompt). Adjust width, height, steps, CFG,
-   sampler, and seed (empty seed = random).
+   sampler, and seed (empty seed = random). ComfyUI uses a fixed txt2img
+   workflow (scheduler fixed to `normal`).
 4. Click **Generate**. **Stop** cancels the run; cancelled runs are not saved.
 5. History (right rail) stores successful generations on disk under
-   `data/generations/` plus SQLite metadata. Click an item to restore the form;
-   **Download** / **Delete** act on that entry.
-6. If Forge is unreachable, the page still loads with empty models and a message
-   linking to Settings and these docs; chat keeps working.
+   `data/generations/` plus SQLite metadata (shared across providers). Click an
+   item to restore the form; **Download** / **Delete** act on that entry.
+6. If the selected backend is unreachable, the page still loads with empty
+   models and a message linking to Settings and these docs; chat keeps working.
 
 ## Explicitly out of scope
 
@@ -86,6 +94,8 @@ Issues are chained with Linear blocking relations, so they cannot be built out o
 | ALI-10 | OpenRouter provider + settings screen | ALI-5, ALI-9 |
 | ALI-7 | Install Ollama models from the UI | ALI-5 |
 | ALI-11 | Forge text-to-image on `/generate` with history | ALI-10 |
+| ALI-12 | ComfyUI image provider alongside Forge | ALI-11 |
+| ALI-13 | Optional reference upload for img2img | ALI-12 |
 
 ## Workflow
 

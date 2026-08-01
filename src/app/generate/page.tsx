@@ -15,6 +15,10 @@ import {
   FORGE_PROVIDER_ID,
   FORGE_PROVIDER_NAME,
 } from "@/lib/providers/forge";
+import {
+  COMFYUI_PROVIDER_ID,
+  COMFYUI_PROVIDER_NAME,
+} from "@/lib/providers/comfyui";
 
 import styles from "./page.module.css";
 
@@ -49,6 +53,7 @@ interface GenerationSummary {
 
 const PROVIDERS = [
   { id: FORGE_PROVIDER_ID, name: FORGE_PROVIDER_NAME },
+  { id: COMFYUI_PROVIDER_ID, name: COMFYUI_PROVIDER_NAME },
 ] as const;
 
 function snippet(prompt: string): string {
@@ -340,10 +345,11 @@ export default function GeneratePage() {
         <div className={styles.column}>
           {!reachable && (
             <p className={styles.banner} role="status">
-              Forge isn’t reachable at <code>{baseUrl}</code>
+              {providerId === COMFYUI_PROVIDER_ID ? "ComfyUI" : "Forge"} isn’t
+              reachable at <code>{baseUrl}</code>
               {reachError ? ` (${reachError})` : ""}. Check{" "}
               <Link href="/settings">Settings</Link> and see the{" "}
-              <Link href="/docs/images">setup docs</Link> for Forge and usage.
+              <Link href="/docs/images">setup docs</Link>.
             </p>
           )}
 

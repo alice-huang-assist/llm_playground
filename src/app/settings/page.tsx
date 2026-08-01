@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui";
 import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge";
 
 import styles from "./page.module.css";
@@ -10,12 +11,14 @@ import styles from "./page.module.css";
 interface SettingsPayload {
   openrouter: { configured: boolean; hint: string | null };
   forge: { baseUrl: string; isDefault: boolean };
+  comfyui: { baseUrl: string; isDefault: boolean };
 }
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [forgeUrl, setForgeUrl] = useState(DEFAULT_FORGE_BASE_URL);
+  const [comfyUrl, setComfyUrl] = useState(DEFAULT_COMFYUI_BASE_URL);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -29,6 +32,7 @@ export default function SettingsPage() {
         if (active) {
           setSettings(payload);
           setForgeUrl(payload.forge.baseUrl);
+          setComfyUrl(payload.comfyui.baseUrl);
         }
       })
       .catch((caught: unknown) => {
@@ -83,6 +87,7 @@ export default function SettingsPage() {
       const payload = (await response.json()) as SettingsPayload;
       setSettings(payload);
       setForgeUrl(payload.forge.baseUrl);
+      setComfyUrl(payload.comfyui.baseUrl);
       setNotice("Key cleared. OpenRouter is no longer offered.");
     } finally {
       setBusy(false);
@@ -112,7 +117,38 @@ export default function SettingsPage() {
 
       setSettings(payload);
       setForgeUrl(payload.forge.baseUrl);
+      setComfyUrl(payload.comfyui.baseUrl);
       setNotice("Forge URL saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveComfy() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comfyBaseUrl: comfyUrl }),
+      });
+      const payload = (await response.json()) as SettingsPayload & {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setError(payload.error ?? `Could not save (${response.status}).`);
+        return;
+      }
+
+      setSettings(payload);
+      setForgeUrl(payload.forge.baseUrl);
+      setComfyUrl(payload.comfyui.baseUrl);
+      setNotice("ComfyUI URL saved.");
     } finally {
       setBusy(false);
     }
@@ -158,6 +194,36 @@ export default function SettingsPage() {
             placeholder={DEFAULT_FORGE_BASE_URL}
             autoComplete="off"
             aria-label="Forge base URL"
+            disabled={busy}
+          />
+          <button type="submit" className={styles.button} disabled={busy}>
+            Save
+          </button>
+        </form>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.heading}>ComfyUI (image generation)</h2>
+        <p className={styles.note}>
+          Base URL of a local ComfyUI server with the HTTP API enabled. Default
+          is <code>{DEFAULT_COMFYUI_BASE_URL}</code>.
+        </p>
+
+        <form
+          className={styles.row}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveComfy();
+          }}
+        >
+          <input
+            className={styles.input}
+            type="url"
+            value={comfyUrl}
+            onChange={(event) => setComfyUrl(event.target.value)}
+            placeholder={DEFAULT_COMFYUI_BASE_URL}
+            autoComplete="off"
+            aria-label="ComfyUI base URL"
             disabled={busy}
           />
           <button type="submit" className={styles.button} disabled={busy}>
