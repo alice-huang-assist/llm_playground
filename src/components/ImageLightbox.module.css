@@ -1,0 +1,142 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: color-mix(in srgb, CanvasText 55%, transparent);
+}
+
+.dialog {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(96vw, 72rem);
+  max-height: 94vh;
+  padding: 0.85rem;
+  color: var(--foreground);
+  background: var(--background);
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  box-shadow: 0 1rem 3rem color-mix(in srgb, CanvasText 25%, transparent);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.counter {
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.close,
+.nav {
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+.close:hover,
+.nav:hover {
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+}
+
+.nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.imageWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+  max-height: calc(94vh - 7rem);
+  overflow: auto;
+}
+
+.image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(94vh - 7rem);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  max-height: 4.5rem;
+  overflow-y: auto;
+}
+
+.thumb,
+.thumbActive {
+  padding: 0;
+  border: 1px solid currentColor;
+  border-radius: 0.3rem;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.thumbActive {
+  opacity: 1;
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.thumbImage {
+  display: block;
+  width: 3rem;
+  height: 3rem;
+  object-fit: cover;
+}
+
+@media (max-width: 40rem) {
+  .backdrop {
+    padding: 0.5rem;
+  }
+
+  .dialog {
+    width: 100%;
+    max-height: 98vh;
+    padding: 0.6rem;
+  }
+
+  .nav {
+    padding: 0.45rem 0.65rem;
+  }
+
+  .image,
+  .imageWrap {
+    max-height: calc(98vh - 9rem);
+  }
+}
