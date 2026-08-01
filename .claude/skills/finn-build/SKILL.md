@@ -113,7 +113,8 @@ amended before opening the PR.
 
 Comment the PR URL on the Linear issue. Move it to the team's review state if
 one exists; otherwise leave it in the started state for the Linear-GitHub
-integration to manage. Never merge and never enable auto-merge. End the pass.
+integration to manage. Never merge and never enable auto-merge — `/finn-review`
+owns squash auto-merge after `loop-approved`. End the pass.
 
 ## 8. Blocked
 

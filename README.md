@@ -57,4 +57,7 @@ Issues are chained with Linear blocking relations, so they cannot be built out o
 
 This repo uses [Finn-loop](https://github.com/finna/Finn-loop): `/finn-spec` interviews
 and files issues, you apply `agent-ready` in Linear, `/finn-build` claims and opens PRs,
-`/finn-review` posts a verdict. **Humans merge** — no agent merges or enables auto-merge.
+`/finn-review` posts a verdict. When a PR is `loop-approved` with required CI green and
+no `needs-human-review`, the reviewer enables **squash auto-merge** (`gh pr merge --auto
+--squash`). Build never merges. Ensure branch protection allows auto-merge and that
+required checks are configured — Finn-loop will not approve without them.
