@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import ImageLightbox from "@/components/ImageLightbox";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
   DEFAULT_DENOISING_STRENGTH,
@@ -113,6 +114,7 @@ export default function GeneratePage() {
   );
   const [progressPercent, setProgressPercent] = useState<number | null>(null);
   const [livePreviewUrl, setLivePreviewUrl] = useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -526,6 +528,22 @@ export default function GeneratePage() {
   const historyGroups = groupGenerations(history);
   const gridIds =
     !busy && !livePreviewUrl && previewIds.length > 1 ? previewIds : null;
+  const lightboxIds =
+    previewIds.length > 0
+      ? previewIds
+      : activeId
+        ? [activeId]
+        : [];
+  const lightboxImages = lightboxIds.map((id) => ({
+    id,
+    src: `/api/images/generations/${id}/file`,
+    alt: prompt || "Generated image",
+  }));
+
+  function openLightbox(id: string) {
+    const index = lightboxIds.indexOf(id);
+    setLightboxIndex(index >= 0 ? index : 0);
+  }
 
   const canGenerate =
     !busy &&
@@ -858,6 +876,7 @@ export default function GeneratePage() {
                       const item = history.find((entry) => entry.id === id);
                       if (item) applyGeneration(item);
                       else setActiveId(id);
+                      openLightbox(id);
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -870,12 +889,19 @@ export default function GeneratePage() {
                 ))}
               </div>
             ) : activeId ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className={styles.image}
-                src={`/api/images/generations/${activeId}/file`}
-                alt={prompt || "Generated image"}
-              />
+              <button
+                type="button"
+                className={styles.imageButton}
+                onClick={() => openLightbox(activeId)}
+                aria-label="Open full view"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  className={styles.image}
+                  src={`/api/images/generations/${activeId}/file`}
+                  alt={prompt || "Generated image"}
+                />
+              </button>
             ) : (
               <p className={styles.placeholder}>
                 Generated images appear here.
@@ -1048,6 +1074,23 @@ export default function GeneratePage() {
           )}
         </aside>
       </div>
+
+      {lightboxIndex !== null && lightboxImages.length > 0 && (
+        <ImageLightbox
+          images={lightboxImages}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onIndexChange={(nextIndex) => {
+            setLightboxIndex(nextIndex);
+            const nextId = lightboxIds[nextIndex];
+            if (nextId) {
+              const item = history.find((entry) => entry.id === nextId);
+              if (item) applyGeneration(item);
+              else setActiveId(nextId);
+            }
+          }}
+        />
+      )}
     </main>
   );
 }
