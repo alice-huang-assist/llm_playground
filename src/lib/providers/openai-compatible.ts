@@ -133,6 +133,7 @@ export class OpenAICompatibleProvider implements Provider {
         model: request.model,
         messages: request.messages,
         stream: true,
+        ...request.parameters,
       }),
       signal: request.signal,
       cache: "no-store",

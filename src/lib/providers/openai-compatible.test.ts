@@ -193,6 +193,28 @@ describe("OpenAICompatibleProvider.chat", () => {
     });
   });
 
+  it("spreads sampling parameters into the upstream request body", async () => {
+    const fetchSpy = mockFetch(
+      async () => new Response(bodyOf("data: [DONE]\n\n")),
+    );
+
+    await collect(
+      provider().chat({
+        model: "qwen3:4b",
+        messages: [{ role: "user", content: "hi" }],
+        parameters: { temperature: 0, seed: 42 },
+      }),
+    );
+
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toEqual({
+      model: "qwen3:4b",
+      messages: [{ role: "user", content: "hi" }],
+      stream: true,
+      temperature: 0,
+      seed: 42,
+    });
+  });
+
   it("passes the caller's abort signal to the upstream request", async () => {
     const fetchSpy = mockFetch(async () => new Response(bodyOf("data: [DONE]\n\n")));
     const controller = new AbortController();
