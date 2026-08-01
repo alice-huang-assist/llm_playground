@@ -1,0 +1,81 @@
+.installer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-width: 32rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+}
+
+.input:disabled {
+  opacity: 0.5;
+}
+
+.button {
+  padding: 0.45rem 0.9rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.note,
+.unavailable {
+  font-size: 0.8rem;
+  opacity: 0.6;
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem 0.75rem;
+  align-items: center;
+  font-size: 0.875rem;
+}
+
+.status {
+  overflow-wrap: anywhere;
+}
+
+.percent {
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.error {
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}

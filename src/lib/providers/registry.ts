@@ -1,12 +1,13 @@
+import { OLLAMA_HOST, OLLAMA_PROVIDER_ID } from "./ollama";
 import { OpenAICompatibleProvider } from "./openai-compatible";
 import type { Provider, ProviderModels } from "./types";
 
 /** Every provider the playground knows about, in display order. */
 export const providers: Provider[] = [
   new OpenAICompatibleProvider({
-    id: "ollama",
+    id: OLLAMA_PROVIDER_ID,
     name: "Ollama",
-    baseUrl: "http://localhost:11434/v1",
+    baseUrl: `${OLLAMA_HOST}/v1`,
   }),
   new OpenAICompatibleProvider({
     id: "lmstudio",
