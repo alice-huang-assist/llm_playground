@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 import ThemeToggle from "@/components/ThemeToggle";
+import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
+import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 
 import styles from "./page.module.css";
 
@@ -16,6 +18,22 @@ export default function ImagesDocsPage() {
           <Link className={styles.link} href="/settings">
             Settings
           </Link>
+          <a
+            className={styles.link}
+            href={DEFAULT_FORGE_BASE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Forge
+          </a>
+          <a
+            className={styles.link}
+            href={DEFAULT_COMFYUI_BASE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            ComfyUI
+          </a>
           <Link className={styles.link} href="/">
             Chat
           </Link>
@@ -59,8 +77,15 @@ export default function ImagesDocsPage() {
           <li>
             Start everything with <code>npm run dev:all</code> (or{" "}
             <code>npm run backends:start</code> then <code>npm run dev</code>).
-            Defaults: Forge <code>http://127.0.0.1:7860</code>, ComfyUI{" "}
-            <code>http://127.0.0.1:8188</code>.
+            Defaults: Forge{" "}
+            <a href={DEFAULT_FORGE_BASE_URL} target="_blank" rel="noreferrer">
+              <code>{DEFAULT_FORGE_BASE_URL}</code>
+            </a>
+            , ComfyUI{" "}
+            <a href={DEFAULT_COMFYUI_BASE_URL} target="_blank" rel="noreferrer">
+              <code>{DEFAULT_COMFYUI_BASE_URL}</code>
+            </a>
+            .
           </li>
           <li>
             In <Link href="/settings">Settings</Link>, change base URLs only if
@@ -74,8 +99,14 @@ export default function ImagesDocsPage() {
         <ol className={styles.list}>
           <li>
             Install and run Forge (API on{" "}
-            <code>http://127.0.0.1:7860</code>) and/or ComfyUI (
-            <code>http://127.0.0.1:8188</code>) yourself.
+            <a href={DEFAULT_FORGE_BASE_URL} target="_blank" rel="noreferrer">
+              <code>{DEFAULT_FORGE_BASE_URL}</code>
+            </a>
+            ) and/or ComfyUI (
+            <a href={DEFAULT_COMFYUI_BASE_URL} target="_blank" rel="noreferrer">
+              <code>{DEFAULT_COMFYUI_BASE_URL}</code>
+            </a>
+            ) yourself.
           </li>
           <li>Put checkpoints in each server’s models folder.</li>
           <li>

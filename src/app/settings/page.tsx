@@ -4,8 +4,14 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import ThemeToggle from "@/components/ThemeToggle";
-import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
-import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
+import {
+  DEFAULT_COMFYUI_BASE_URL,
+  normalizeComfyBaseUrl,
+} from "@/lib/providers/comfyui-shared";
+import {
+  DEFAULT_FORGE_BASE_URL,
+  normalizeForgeBaseUrl,
+} from "@/lib/providers/forge-shared";
 
 import styles from "./page.module.css";
 
@@ -156,6 +162,10 @@ export default function SettingsPage() {
   }
 
   const configured = settings?.openrouter.configured ?? false;
+  const forgeOpenHref =
+    normalizeForgeBaseUrl(forgeUrl) ?? DEFAULT_FORGE_BASE_URL;
+  const comfyOpenHref =
+    normalizeComfyBaseUrl(comfyUrl) ?? DEFAULT_COMFYUI_BASE_URL;
 
   return (
     <main className={styles.main}>
@@ -168,6 +178,22 @@ export default function SettingsPage() {
           <Link className={styles.back} href="/generate">
             Images
           </Link>
+          <a
+            className={styles.back}
+            href={forgeOpenHref}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Forge
+          </a>
+          <a
+            className={styles.back}
+            href={comfyOpenHref}
+            target="_blank"
+            rel="noreferrer"
+          >
+            ComfyUI
+          </a>
           <ThemeToggle />
         </nav>
       </div>
@@ -201,6 +227,14 @@ export default function SettingsPage() {
           <button type="submit" className={styles.button} disabled={busy}>
             Save
           </button>
+          <a
+            className={styles.button}
+            href={forgeOpenHref}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open
+          </a>
         </form>
       </section>
 
@@ -231,6 +265,14 @@ export default function SettingsPage() {
           <button type="submit" className={styles.button} disabled={busy}>
             Save
           </button>
+          <a
+            className={styles.button}
+            href={comfyOpenHref}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Open
+          </a>
         </form>
       </section>
 

@@ -80,6 +80,8 @@
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
   padding: 0.45rem 0.9rem;
   font: inherit;
   color: inherit;
@@ -87,6 +89,7 @@
   border: 1px solid currentColor;
   border-radius: 0.5rem;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .button:disabled {

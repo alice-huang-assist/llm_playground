@@ -11,6 +11,8 @@ import SessionSidebar from "@/components/SessionSidebar";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { Session, SessionMessage, SessionSummary } from "@/lib/db/sessions";
 import { DEFAULT_PARAMETERS, type ParameterValues } from "@/lib/params";
+import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
+import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 import { OLLAMA_PROVIDER_ID } from "@/lib/providers/ollama";
 import type { Model, ProviderModels } from "@/lib/providers/types";
 
@@ -150,6 +152,22 @@ export default function Home() {
           <Link className={styles.navLink} href="/settings">
             Settings
           </Link>
+          <a
+            className={styles.navLink}
+            href={DEFAULT_FORGE_BASE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Forge
+          </a>
+          <a
+            className={styles.navLink}
+            href={DEFAULT_COMFYUI_BASE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            ComfyUI
+          </a>
           <ThemeToggle />
         </nav>
       </div>
