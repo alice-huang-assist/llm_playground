@@ -62,6 +62,11 @@ const PROVIDERS = [
   { id: COMFYUI_PROVIDER_ID, name: COMFYUI_PROVIDER_NAME },
 ] as const;
 
+type GenerateStreamEvent =
+  | { type: "progress"; percent?: number; currentImage?: string }
+  | { type: "done"; generation?: GenerationSummary }
+  | { type: "error"; message?: string };
+
 function snippet(prompt: string): string {
   const cleaned = prompt.replace(/\s+/g, " ").trim();
   if (cleaned === "") return "(empty prompt)";
@@ -95,8 +100,15 @@ export default function GeneratePage() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [history, setHistory] = useState<GenerationSummary[]>([]);
+  const [progressPercent, setProgressPercent] = useState<number | null>(null);
+  const [livePreviewUrl, setLivePreviewUrl] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+
+  function clearProgressUi() {
+    setProgressPercent(null);
+    setLivePreviewUrl(null);
+  }
 
   const refreshHistory = useCallback(async () => {
     const response = await fetch("/api/images/generations");
@@ -306,6 +318,7 @@ export default function GeneratePage() {
     setBusy(true);
     setError(null);
     setStatus("Generating…");
+    clearProgressUi();
 
     try {
       const response = await fetch("/api/images/generate", {
@@ -332,30 +345,76 @@ export default function GeneratePage() {
         }),
       });
 
-      const payload = (await response.json()) as {
-        generation?: GenerationSummary;
-        error?: string;
-      };
-
       if (!response.ok) {
-        setError(payload.error ?? `Generate failed (${response.status}).`);
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        setError(payload?.error ?? `Generate failed (${response.status}).`);
         setStatus(null);
+        clearProgressUi();
         return;
       }
 
-      if (payload.generation) {
-        applyGeneration(payload.generation);
+      if (!response.body) {
+        setError("Generate failed (empty response).");
+        setStatus(null);
+        clearProgressUi();
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finished = false;
+
+      const handle = (line: string) => {
+        if (line.trim() === "") return;
+        const event = JSON.parse(line) as GenerateStreamEvent;
+        if (event.type === "progress") {
+          if (typeof event.percent === "number" && Number.isFinite(event.percent)) {
+            setProgressPercent(Math.max(0, Math.min(100, Math.round(event.percent))));
+          }
+          if (typeof event.currentImage === "string" && event.currentImage !== "") {
+            setLivePreviewUrl(`data:image/png;base64,${event.currentImage}`);
+          }
+        } else if (event.type === "error") {
+          setError(event.message ?? "Generate failed.");
+          setStatus(null);
+          clearProgressUi();
+        } else if (event.type === "done" && event.generation) {
+          finished = true;
+          clearProgressUi();
+          applyGeneration(event.generation);
+          setStatus("Done.");
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newline = buffer.indexOf("\n");
+        while (newline !== -1) {
+          handle(buffer.slice(0, newline));
+          buffer = buffer.slice(newline + 1);
+          newline = buffer.indexOf("\n");
+        }
+      }
+      handle(buffer);
+
+      if (finished) {
         await refreshHistory();
-        setStatus("Done.");
       }
     } catch (caught: unknown) {
       if (controller.signal.aborted) {
         setStatus(null);
         setError(null);
+        clearProgressUi();
         return;
       }
       setError(caught instanceof Error ? caught.message : String(caught));
       setStatus(null);
+      clearProgressUi();
     } finally {
       abortRef.current = null;
       setBusy(false);
@@ -365,6 +424,7 @@ export default function GeneratePage() {
   function stop() {
     abortRef.current?.abort();
     setStatus("Cancelling…");
+    clearProgressUi();
   }
 
   async function remove(id: string) {
@@ -675,17 +735,38 @@ export default function GeneratePage() {
           {error && <p className={styles.error}>{error}</p>}
 
           <div className={styles.preview}>
-            {activeId ? (
+            {livePreviewUrl || activeId ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 className={styles.image}
-                src={`/api/images/generations/${activeId}/file`}
+                src={
+                  livePreviewUrl ??
+                  `/api/images/generations/${activeId}/file`
+                }
                 alt={prompt || "Generated image"}
               />
             ) : (
               <p className={styles.placeholder}>
                 Generated images appear here.
               </p>
+            )}
+            {busy && (
+              <div className={styles.previewProgress} aria-live="polite">
+                <span className={styles.previewProgressLabel}>
+                  {typeof progressPercent === "number"
+                    ? `${progressPercent}%`
+                    : "Generating…"}
+                </span>
+                <progress
+                  className={styles.previewProgressBar}
+                  max={100}
+                  value={
+                    typeof progressPercent === "number"
+                      ? progressPercent
+                      : undefined
+                  }
+                />
+              </div>
             )}
           </div>
         </div>

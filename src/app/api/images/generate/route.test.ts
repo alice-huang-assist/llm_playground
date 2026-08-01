@@ -47,15 +47,29 @@ function post(body: unknown, signal?: AbortSignal) {
   );
 }
 
+async function readNdjson(response: Response) {
+  const text = await response.text();
+  return text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
 beforeEach(() => {
   fake.generationsDir = mkdtempSync(path.join(tmpdir(), "gens-"));
   process.env.PLAYGROUND_GENERATIONS_DIR = fake.generationsDir;
   fake.db = openDatabase(":memory:");
   fake.txt2img.mockReset();
-  fake.txt2img.mockResolvedValue({
-    imageBase64: Buffer.from("png-bytes").toString("base64"),
-    seed: 99,
-  });
+  fake.txt2img.mockImplementation(
+    async (request: { onProgress?: (p: { percent: number }) => void }) => {
+      request.onProgress?.({ percent: 40 });
+      return {
+        imageBase64: Buffer.from("png-bytes").toString("base64"),
+        seed: 99,
+      };
+    },
+  );
 });
 
 afterEach(() => {
@@ -64,7 +78,7 @@ afterEach(() => {
 });
 
 describe("POST /api/images/generate", () => {
-  it("clamps params, calls Forge, and persists a generation", async () => {
+  it("streams progress then a persisted generation", async () => {
     const response = await post({
       providerId: FORGE_PROVIDER_ID,
       model: "sdxl.safetensors",
@@ -79,12 +93,20 @@ describe("POST /api/images/generate", () => {
     });
 
     expect(response.status).toBe(200);
-    const payload = (await response.json()) as {
-      generation: { prompt: string; width: number; seed: number | null };
-    };
-    expect(payload.generation.prompt).toBe("a lighthouse");
-    expect(payload.generation.width).toBe(512);
-    expect(payload.generation.seed).toBe(99);
+    expect(response.headers.get("Content-Type")).toContain(
+      "application/x-ndjson",
+    );
+
+    const events = await readNdjson(response);
+    expect(events[0]).toMatchObject({ type: "progress", percent: 40 });
+    expect(events.at(-1)).toMatchObject({
+      type: "done",
+      generation: {
+        prompt: "a lighthouse",
+        width: 512,
+        seed: 99,
+      },
+    });
 
     expect(fake.txt2img).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -95,6 +117,7 @@ describe("POST /api/images/generate", () => {
         height: 1024,
         seed: -1,
         sampler: "Euler a",
+        onProgress: expect.any(Function),
       }),
       "http://forge.test",
     );

@@ -4,10 +4,12 @@ import {
   buildImg2ImgWorkflow,
   buildTxt2ImgWorkflow,
   comfyTxt2Img,
+  comfyWebSocketUrl,
   isSd3Checkpoint,
   listComfyModels,
   listComfySamplers,
   normalizeComfyBaseUrl,
+  parseComfyProgressMessage,
   resolveComfyBaseUrl,
 } from "@/lib/providers/comfyui";
 
@@ -291,5 +293,32 @@ describe("ComfyUI HTTP helpers", () => {
       prompt: { "4": { inputs: { ckpt_name: string } } };
     };
     expect(body.prompt["4"].inputs.ckpt_name).toBe("model.safetensors");
+  });
+});
+
+describe("comfy progress helpers", () => {
+  it("builds a websocket URL from the HTTP base", () => {
+    expect(comfyWebSocketUrl("http://127.0.0.1:8188", "abc")).toBe(
+      "ws://127.0.0.1:8188/ws?clientId=abc",
+    );
+    expect(comfyWebSocketUrl("https://example.test", "x y")).toBe(
+      "wss://example.test/ws?clientId=x%20y",
+    );
+  });
+
+  it("parses matching progress frames", () => {
+    expect(
+      parseComfyProgressMessage(
+        { type: "progress", data: { value: 3, max: 12, prompt_id: "p1" } },
+        "p1",
+      ),
+    ).toEqual({ percent: 25 });
+
+    expect(
+      parseComfyProgressMessage(
+        { type: "progress", data: { value: 3, max: 12, prompt_id: "other" } },
+        "p1",
+      ),
+    ).toBeNull();
   });
 });
