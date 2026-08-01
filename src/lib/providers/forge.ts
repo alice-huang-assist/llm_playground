@@ -5,18 +5,23 @@
 
 import { getDatabase } from "@/lib/db/client";
 import { getSetting } from "@/lib/db/settings";
-
 import {
-  FORGE_BASE_URL_KEY,
   DEFAULT_FORGE_BASE_URL,
-} from "./forge-shared";
-
-export {
   FORGE_BASE_URL_KEY,
   FORGE_PROVIDER_ID,
   FORGE_PROVIDER_NAME,
+  normalizeForgeBaseUrl,
+  resolveForgeBaseUrl,
+} from "@/lib/providers/forge-shared";
+
+export {
   DEFAULT_FORGE_BASE_URL,
-} from "./forge-shared";
+  FORGE_BASE_URL_KEY,
+  FORGE_PROVIDER_ID,
+  FORGE_PROVIDER_NAME,
+  normalizeForgeBaseUrl,
+  resolveForgeBaseUrl,
+};
 
 export interface ForgeModel {
   id: string;
@@ -66,28 +71,8 @@ export interface ForgeImg2ImgPayload extends ForgeTxt2ImgPayload {
   denoising_strength: number;
 }
 
-/** Resolve the configured Forge base URL, falling back to the localhost default. */
-export function resolveForgeBaseUrl(stored: string | null | undefined): string {
-  const trimmed = (stored ?? "").trim().replace(/\/+$/, "");
-  return trimmed === "" ? DEFAULT_FORGE_BASE_URL : trimmed;
-}
-
 export function getForgeBaseUrl(): string {
   return resolveForgeBaseUrl(getSetting(getDatabase(), FORGE_BASE_URL_KEY));
-}
-
-export function normalizeForgeBaseUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().replace(/\/+$/, "");
-  if (trimmed === "") return null;
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  return trimmed;
 }
 
 /** Shape the A1111 txt2img body. Exported for unit tests. */

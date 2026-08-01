@@ -4,6 +4,7 @@ import {
   buildImg2ImgWorkflow,
   buildTxt2ImgWorkflow,
   comfyTxt2Img,
+  isSd3Checkpoint,
   listComfyModels,
   listComfySamplers,
   normalizeComfyBaseUrl,
@@ -31,6 +32,18 @@ describe("normalizeComfyBaseUrl", () => {
     expect(normalizeComfyBaseUrl("nope")).toBeNull();
   });
 });
+
+const baseTxt2Img = {
+  model: "model.safetensors",
+  prompt: "a cat",
+  negativePrompt: "blur",
+  width: 512,
+  height: 768,
+  steps: 20,
+  cfgScale: 7,
+  sampler: "euler",
+  seed: 42,
+};
 
 describe("buildTxt2ImgWorkflow", () => {
   it("wires the fixed node graph with request fields", () => {
@@ -69,6 +82,73 @@ describe("buildTxt2ImgWorkflow", () => {
       },
     });
   });
+
+  it("keeps the SDXL path free of SD3 nodes", () => {
+    const workflow = buildTxt2ImgWorkflow({ ...baseTxt2Img });
+
+    expect(workflow["5"]).toMatchObject({ class_type: "EmptyLatentImage" });
+    expect(workflow["6"]).toMatchObject({ inputs: { clip: ["4", 1] } });
+    expect(workflow["3"]).toMatchObject({ inputs: { model: ["4", 0] } });
+    expect(workflow["10"]).toBeUndefined();
+    expect(workflow["11"]).toBeUndefined();
+  });
+
+  it("wires SD3 checkpoints to TripleCLIPLoader, SD3 latent, and SD3 sampling", () => {
+    const workflow = buildTxt2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "sd3.5_large.safetensors",
+    });
+
+    expect(workflow["5"]).toMatchObject({ class_type: "EmptySD3LatentImage" });
+    expect(workflow["10"]).toMatchObject({
+      class_type: "TripleCLIPLoader",
+      inputs: {
+        clip_name1: "clip_l.safetensors",
+        clip_name2: "clip_g.safetensors",
+        clip_name3: "t5xxl_fp16.safetensors",
+      },
+    });
+    expect(workflow["11"]).toMatchObject({
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["4", 0], shift: 3 },
+    });
+    expect(workflow["6"]).toMatchObject({ inputs: { clip: ["10", 0] } });
+    expect(workflow["7"]).toMatchObject({ inputs: { clip: ["10", 0] } });
+    expect(workflow["3"]).toMatchObject({ inputs: { model: ["11", 0] } });
+  });
+
+  it("skips TripleCLIPLoader when the SD3 checkpoint bundles its encoders", () => {
+    const workflow = buildTxt2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors",
+    });
+
+    expect(workflow["5"]).toMatchObject({ class_type: "EmptySD3LatentImage" });
+    expect(workflow["10"]).toBeUndefined();
+    expect(workflow["6"]).toMatchObject({ inputs: { clip: ["4", 1] } });
+    expect(workflow["3"]).toMatchObject({ inputs: { model: ["11", 0] } });
+  });
+});
+
+describe("isSd3Checkpoint", () => {
+  it.each([
+    "sd3.5_large.safetensors",
+    "sd3_medium.safetensors",
+    "SD3.5_Large_Turbo.safetensors",
+    "my_sd_3.5_finetune.safetensors",
+  ])("detects %s", (name) => {
+    expect(isSd3Checkpoint(name)).toBe(true);
+  });
+
+  it.each([
+    "sd_xl_base_1.0.safetensors",
+    "RealVisXL_V4.0.safetensors",
+    "DreamShaperXL_Lightning.safetensors",
+    "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors",
+    "model.safetensors",
+  ])("ignores %s", (name) => {
+    expect(isSd3Checkpoint(name)).toBe(false);
+  });
 });
 
 describe("buildImg2ImgWorkflow", () => {
@@ -95,6 +175,39 @@ describe("buildImg2ImgWorkflow", () => {
         inputs: { denoise: 0.4, sampler_name: "euler" },
       },
     });
+  });
+
+  it("wires SD3 checkpoints to TripleCLIPLoader and SD3 sampling", () => {
+    const workflow = buildImg2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "sd3.5_large.safetensors",
+      imageName: "ref.png",
+      denoisingStrength: 0.6,
+    });
+
+    expect(workflow["9"]).toMatchObject({ class_type: "TripleCLIPLoader" });
+    expect(workflow["10"]).toMatchObject({
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["1", 0], shift: 3 },
+    });
+    expect(workflow["4"]).toMatchObject({ inputs: { clip: ["9", 0] } });
+    expect(workflow["5"]).toMatchObject({ inputs: { clip: ["9", 0] } });
+    expect(workflow["6"]).toMatchObject({
+      inputs: { model: ["10", 0], denoise: 0.6 },
+    });
+  });
+
+  it("keeps the SDXL path free of SD3 nodes", () => {
+    const workflow = buildImg2ImgWorkflow({
+      ...baseTxt2Img,
+      imageName: "ref.png",
+      denoisingStrength: 0.4,
+    });
+
+    expect(workflow["9"]).toBeUndefined();
+    expect(workflow["10"]).toBeUndefined();
+    expect(workflow["4"]).toMatchObject({ inputs: { clip: ["1", 1] } });
+    expect(workflow["6"]).toMatchObject({ inputs: { model: ["1", 0] } });
   });
 });
 

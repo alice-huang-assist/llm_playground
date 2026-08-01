@@ -28,6 +28,9 @@ drizzle/*.db
 # Generated images from the Images playground
 data/generations/
 
+# Local Forge + ComfyUI clones, venvs, logs, shared checkpoints (Apple Silicon)
+vendors/
+
 # Testing
 coverage/
 .nyc_output/

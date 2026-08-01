@@ -24,57 +24,62 @@ export default function ImagesDocsPage() {
       </div>
 
       <section className={styles.section}>
-        <h2 className={styles.heading}>Setup (Forge)</h2>
+        <h2 className={styles.heading}>Setup (bundled — Apple Silicon)</h2>
+        <p className={styles.copy}>
+          This path installs Forge and ComfyUI under <code>vendors/</code> on{" "}
+          <strong>macOS arm64</strong> only (e.g. M4). It does not cover
+          Windows, NVIDIA Linux, or Docker.
+        </p>
         <ol className={styles.list}>
           <li>
-            Install and run{" "}
+            From the repo root: <code>npm run install:backends</code> — clones{" "}
             <a
               href="https://github.com/lllyasviel/stable-diffusion-webui-forge"
               target="_blank"
               rel="noreferrer"
             >
-              Stable Diffusion WebUI Forge
+              Forge
             </a>{" "}
-            (or another A1111-compatible server that exposes{" "}
-            <code>/sdapi/v1</code>).
-          </li>
-          <li>
-            Start it with the API enabled (Forge/A1111 typically listen on{" "}
-            <code>http://127.0.0.1:7860</code>). Confirm{" "}
-            <code>/sdapi/v1/sd-models</code> responds in a browser or with curl.
-          </li>
-          <li>
-            Download at least one open-weight checkpoint into Forge’s models
-            folder so it appears in the model list.
-          </li>
-          <li>
-            In this app, open <Link href="/settings">Settings</Link> and set the
-            Forge base URL if it isn’t already{" "}
-            <code>http://127.0.0.1:7860</code>.
-          </li>
-        </ol>
-      </section>
-
-      <section className={styles.section}>
-        <h2 className={styles.heading}>Setup (ComfyUI)</h2>
-        <ol className={styles.list}>
-          <li>
-            Install and run{" "}
+            and{" "}
             <a
               href="https://github.com/comfyanonymous/ComfyUI"
               target="_blank"
               rel="noreferrer"
             >
               ComfyUI
-            </a>{" "}
-            with the HTTP API (default <code>http://127.0.0.1:8188</code>).
+            </a>
+            , creates Python venvs, and shares checkpoints at{" "}
+            <code>vendors/models/checkpoints/</code>.
           </li>
           <li>
-            Put at least one open-weight checkpoint in ComfyUI’s models folder.
+            Drop at least one open-weight checkpoint (
+            <code>.safetensors</code>) into that shared folder. Nothing is
+            downloaded automatically.
           </li>
           <li>
-            In <Link href="/settings">Settings</Link>, set the ComfyUI base URL
-            if it isn’t already <code>http://127.0.0.1:8188</code>.
+            Start everything with <code>npm run dev:all</code> (or{" "}
+            <code>npm run backends:start</code> then <code>npm run dev</code>).
+            Defaults: Forge <code>http://127.0.0.1:7860</code>, ComfyUI{" "}
+            <code>http://127.0.0.1:8188</code>.
+          </li>
+          <li>
+            In <Link href="/settings">Settings</Link>, change base URLs only if
+            you override ports.
+          </li>
+        </ol>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.heading}>Setup (manual / external)</h2>
+        <ol className={styles.list}>
+          <li>
+            Install and run Forge (API on{" "}
+            <code>http://127.0.0.1:7860</code>) and/or ComfyUI (
+            <code>http://127.0.0.1:8188</code>) yourself.
+          </li>
+          <li>Put checkpoints in each server’s models folder.</li>
+          <li>
+            Point <Link href="/settings">Settings</Link> at those URLs.
           </li>
         </ol>
       </section>
@@ -117,6 +122,33 @@ export default function ImagesDocsPage() {
             unaffected.
           </li>
         </ol>
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.heading}>Troubleshooting</h2>
+        <ul className={styles.list}>
+          <li>
+            <strong>Empty model list / backend unreachable</strong> — run{" "}
+            <code>npm run backends:start</code>; check{" "}
+            <code>vendors/logs/forge.log</code> and{" "}
+            <code>comfyui.log</code>. First Forge boot can take several minutes.
+          </li>
+          <li>
+            <strong>Still no models</strong> — add a{" "}
+            <code>.safetensors</code> under{" "}
+            <code>vendors/models/checkpoints/</code>, then restart backends.
+          </li>
+          <li>
+            <strong>OOM on M4</strong> — running both backends with large
+            checkpoints can exhaust unified memory. Use{" "}
+            <code>npm run backends:stop</code> (or kill one PID under{" "}
+            <code>vendors/run/</code>) and run a single provider.
+          </li>
+          <li>
+            <strong>install:backends refuses</strong> — Apple Silicon only. Use
+            the manual setup above on other platforms.
+          </li>
+        </ul>
       </section>
     </main>
   );

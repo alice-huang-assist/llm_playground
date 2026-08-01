@@ -5,18 +5,23 @@
 
 import { getDatabase } from "@/lib/db/client";
 import { getSetting } from "@/lib/db/settings";
-
 import {
   COMFYUI_BASE_URL_KEY,
+  COMFYUI_PROVIDER_ID,
+  COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
-} from "./comfyui-shared";
+  normalizeComfyBaseUrl,
+  resolveComfyBaseUrl,
+} from "@/lib/providers/comfyui-shared";
 
 export {
   COMFYUI_BASE_URL_KEY,
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
-} from "./comfyui-shared";
+  normalizeComfyBaseUrl,
+  resolveComfyBaseUrl,
+};
 
 export interface ComfyModel {
   id: string;
@@ -48,38 +53,46 @@ export interface ComfyTxt2ImgResult {
   seed: number;
 }
 
-/** Resolve configured ComfyUI base URL. */
-export function resolveComfyBaseUrl(stored: string | null | undefined): string {
-  const trimmed = (stored ?? "").trim().replace(/\/+$/, "");
-  return trimmed === "" ? DEFAULT_COMFYUI_BASE_URL : trimmed;
-}
-
 export function getComfyBaseUrl(): string {
   return resolveComfyBaseUrl(getSetting(getDatabase(), COMFYUI_BASE_URL_KEY));
 }
 
-export function normalizeComfyBaseUrl(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().replace(/\/+$/, "");
-  if (trimmed === "") return null;
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-  return trimmed;
+/**
+ * SD3/SD3.5 checkpoints need a different graph than SD1.x/SDXL: most ship with
+ * no text encoders, and their latent has 16 channels instead of 4.
+ */
+export function isSd3Checkpoint(model: string): boolean {
+  return /(^|[^a-z0-9])sd_?3(\.\d+)?([^a-z0-9]|$)/i.test(model);
 }
+
+/** Comfy-Org `*_incl_clips_*` builds embed the encoders in the checkpoint. */
+export function sd3HasBundledClips(model: string): boolean {
+  return /incl_clips/i.test(model);
+}
+
+/** TripleCLIPLoader's "sd3" recipe: clip-l, clip-g, t5. */
+const SD3_TEXT_ENCODERS = [
+  "clip_l.safetensors",
+  "clip_g.safetensors",
+  "t5xxl_fp16.safetensors",
+] as const;
+
+const SD3_SAMPLING_SHIFT = 3;
 
 /**
  * Fixed CheckpointLoader → encode → EmptyLatent → KSampler → VAEDecode → SaveImage
- * workflow. Node ids stay stable so tests can assert shaping.
+ * workflow. Node ids stay stable so tests can assert shaping. SD3 checkpoints add
+ * nodes 10/11 and rewire clip/model to them.
  */
 export function buildTxt2ImgWorkflow(
   request: ComfyTxt2ImgRequest,
 ): Record<string, unknown> {
-  return {
+  const sd3 = isSd3Checkpoint(request.model);
+  const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
+  const clip = loadsExternalClip ? ["10", 0] : ["4", 1];
+  const model = sd3 ? ["11", 0] : ["4", 0];
+
+  const workflow: Record<string, unknown> = {
     "3": {
       class_type: "KSampler",
       inputs: {
@@ -89,7 +102,7 @@ export function buildTxt2ImgWorkflow(
         sampler_name: request.sampler,
         scheduler: "normal",
         denoise: 1,
-        model: ["4", 0],
+        model,
         positive: ["6", 0],
         negative: ["7", 0],
         latent_image: ["5", 0],
@@ -100,7 +113,7 @@ export function buildTxt2ImgWorkflow(
       inputs: { ckpt_name: request.model },
     },
     "5": {
-      class_type: "EmptyLatentImage",
+      class_type: sd3 ? "EmptySD3LatentImage" : "EmptyLatentImage",
       inputs: {
         width: request.width,
         height: request.height,
@@ -109,11 +122,11 @@ export function buildTxt2ImgWorkflow(
     },
     "6": {
       class_type: "CLIPTextEncode",
-      inputs: { text: request.prompt, clip: ["4", 1] },
+      inputs: { text: request.prompt, clip },
     },
     "7": {
       class_type: "CLIPTextEncode",
-      inputs: { text: request.negativePrompt, clip: ["4", 1] },
+      inputs: { text: request.negativePrompt, clip },
     },
     "8": {
       class_type: "VAEDecode",
@@ -127,16 +140,41 @@ export function buildTxt2ImgWorkflow(
       },
     },
   };
+
+  if (loadsExternalClip) {
+    workflow["10"] = {
+      class_type: "TripleCLIPLoader",
+      inputs: {
+        clip_name1: SD3_TEXT_ENCODERS[0],
+        clip_name2: SD3_TEXT_ENCODERS[1],
+        clip_name3: SD3_TEXT_ENCODERS[2],
+      },
+    };
+  }
+  if (sd3) {
+    workflow["11"] = {
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["4", 0], shift: SD3_SAMPLING_SHIFT },
+    };
+  }
+  return workflow;
 }
 
 /**
  * Fixed LoadImage → VAEEncode → KSampler(denoise) → VAEDecode → SaveImage.
- * `imageName` is the filename returned by ComfyUI's `/upload/image`.
+ * `imageName` is the filename returned by ComfyUI's `/upload/image`. SD3
+ * checkpoints add nodes 9/10; the latent comes from VAEEncode either way, so no
+ * EmptyLatent swap is needed here.
  */
 export function buildImg2ImgWorkflow(
   request: ComfyImg2ImgRequest,
 ): Record<string, unknown> {
-  return {
+  const sd3 = isSd3Checkpoint(request.model);
+  const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
+  const clip = loadsExternalClip ? ["9", 0] : ["1", 1];
+  const model = sd3 ? ["10", 0] : ["1", 0];
+
+  const workflow: Record<string, unknown> = {
     "1": {
       class_type: "CheckpointLoaderSimple",
       inputs: { ckpt_name: request.model },
@@ -151,11 +189,11 @@ export function buildImg2ImgWorkflow(
     },
     "4": {
       class_type: "CLIPTextEncode",
-      inputs: { text: request.prompt, clip: ["1", 1] },
+      inputs: { text: request.prompt, clip },
     },
     "5": {
       class_type: "CLIPTextEncode",
-      inputs: { text: request.negativePrompt, clip: ["1", 1] },
+      inputs: { text: request.negativePrompt, clip },
     },
     "6": {
       class_type: "KSampler",
@@ -166,7 +204,7 @@ export function buildImg2ImgWorkflow(
         sampler_name: request.sampler,
         scheduler: "normal",
         denoise: request.denoisingStrength,
-        model: ["1", 0],
+        model,
         positive: ["4", 0],
         negative: ["5", 0],
         latent_image: ["3", 0],
@@ -184,6 +222,24 @@ export function buildImg2ImgWorkflow(
       },
     },
   };
+
+  if (loadsExternalClip) {
+    workflow["9"] = {
+      class_type: "TripleCLIPLoader",
+      inputs: {
+        clip_name1: SD3_TEXT_ENCODERS[0],
+        clip_name2: SD3_TEXT_ENCODERS[1],
+        clip_name3: SD3_TEXT_ENCODERS[2],
+      },
+    };
+  }
+  if (sd3) {
+    workflow["10"] = {
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["1", 0], shift: SD3_SAMPLING_SHIFT },
+    };
+  }
+  return workflow;
 }
 
 async function comfyFetch(
