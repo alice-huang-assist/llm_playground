@@ -11,11 +11,17 @@ function modelKey(model: Model) {
 }
 
 export default function ModelPicker({
+  reloadToken = 0,
   onChange,
+  onLoad,
 }: {
+  /** Changing this re-runs discovery, so a fresh install shows up in place. */
+  reloadToken?: number;
   /** Notified whenever the selection changes, so a parent can chat with it. */
   onChange?: (model: Model | null) => void;
-}) {
+  /** Reports each listing, so a parent can react to provider reachability. */
+  onLoad?: (providers: ProviderModels[]) => void;
+} = {}) {
   const [providers, setProviders] = useState<ProviderModels[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState("");
@@ -32,7 +38,10 @@ export default function ModelPicker({
         return response.json() as Promise<{ providers: ProviderModels[] }>;
       })
       .then((payload) => {
-        if (active) setProviders(payload.providers);
+        if (!active) return;
+        setProviders(payload.providers);
+        setLoadError(null);
+        onLoad?.(payload.providers);
       })
       .catch((error: unknown) => {
         if (active) {
@@ -43,7 +52,7 @@ export default function ModelPicker({
     return () => {
       active = false;
     };
-  }, []);
+  }, [reloadToken, onLoad]);
 
   if (loadError) {
     return <p className={styles.error}>Could not load models: {loadError}</p>;
