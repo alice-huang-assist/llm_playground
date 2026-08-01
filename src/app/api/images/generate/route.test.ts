@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openDatabase } from "@/lib/db/client";
+import { listGenerations } from "@/lib/db/generations";
 import { FORGE_PROVIDER_ID } from "@/lib/providers/forge";
 
 const fake = vi.hoisted(() => ({
@@ -62,11 +63,14 @@ beforeEach(() => {
   fake.db = openDatabase(":memory:");
   fake.txt2img.mockReset();
   fake.txt2img.mockImplementation(
-    async (request: { onProgress?: (p: { percent: number }) => void }) => {
-      request.onProgress?.({ percent: 40 });
+    async (request: {
+      seed: number;
+      onProgress?: (p: { percent: number }) => void;
+    }) => {
+      request.onProgress?.({ percent: 100 });
       return {
-        imageBase64: Buffer.from("png-bytes").toString("base64"),
-        seed: 99,
+        imageBase64: Buffer.from(`png-${request.seed}`).toString("base64"),
+        seed: request.seed,
       };
     },
   );
@@ -78,7 +82,7 @@ afterEach(() => {
 });
 
 describe("POST /api/images/generate", () => {
-  it("streams progress then a persisted generation", async () => {
+  it("streams progress then persisted generations", async () => {
     const response = await post({
       providerId: FORGE_PROVIDER_ID,
       model: "sdxl.safetensors",
@@ -98,29 +102,47 @@ describe("POST /api/images/generate", () => {
     );
 
     const events = await readNdjson(response);
-    expect(events[0]).toMatchObject({ type: "progress", percent: 40 });
-    expect(events.at(-1)).toMatchObject({
-      type: "done",
-      generation: {
-        prompt: "a lighthouse",
-        width: 512,
-        seed: 99,
-      },
+    expect(events.some((event) => event.type === "progress")).toBe(true);
+    const done = events.at(-1) as {
+      type: string;
+      generations: Array<{ prompt: string; width: number; batchId: string | null }>;
+    };
+    expect(done.type).toBe("done");
+    expect(done.generations).toHaveLength(1);
+    expect(done.generations[0]).toMatchObject({
+      prompt: "a lighthouse",
+      width: 512,
+      batchId: null,
+    });
+  });
+
+  it("persists a shared batch id for count > 1 with incrementing seeds", async () => {
+    const response = await post({
+      providerId: FORGE_PROVIDER_ID,
+      model: "sdxl.safetensors",
+      prompt: "cats",
+      sampler: "Euler a",
+      seed: 10,
+      count: 3,
     });
 
-    expect(fake.txt2img).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: "sdxl.safetensors",
-        prompt: "a lighthouse",
-        negativePrompt: "blur",
-        width: 512,
-        height: 1024,
-        seed: -1,
-        sampler: "Euler a",
-        onProgress: expect.any(Function),
-      }),
-      "http://forge.test",
+    const events = await readNdjson(response);
+    const done = events.at(-1) as {
+      type: string;
+      generations: Array<{ seed: number | null; batchId: string | null }>;
+    };
+    expect(done.type).toBe("done");
+    expect(done.generations).toHaveLength(3);
+    const batchId = done.generations[0]?.batchId;
+    expect(batchId).toBeTruthy();
+    expect(done.generations.every((g) => g.batchId === batchId)).toBe(true);
+    expect(done.generations.map((g) => g.seed)).toEqual([10, 11, 12]);
+
+    const stored = listGenerations(
+      fake.db as ReturnType<typeof openDatabase>,
     );
+    expect(stored).toHaveLength(3);
+    expect(fake.txt2img).toHaveBeenCalledTimes(3);
   });
 
   it("rejects a missing prompt", async () => {

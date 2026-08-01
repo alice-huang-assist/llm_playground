@@ -79,6 +79,13 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE generations ADD COLUMN denoising_strength REAL;
     `,
   },
+  {
+    version: 5,
+    up: `
+      ALTER TABLE generations ADD COLUMN batch_id TEXT;
+      CREATE INDEX generations_batch_id ON generations (batch_id);
+    `,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.reduce(

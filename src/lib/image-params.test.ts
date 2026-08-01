@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   clampDenoisingStrength,
+  clampImageCount,
   clampImageParams,
   clampImageSize,
   clampSeed,
   forgeSeed,
+  overallProgressPercent,
   parseReferenceImage,
+  seedForIndex,
 } from "@/lib/image-params";
 
 describe("clampImageSize", () => {
@@ -23,6 +26,22 @@ describe("clampSeed / forgeSeed", () => {
     expect(clampSeed(null)).toBeNull();
     expect(forgeSeed(null)).toBe(-1);
     expect(forgeSeed(7)).toBe(7);
+  });
+});
+
+describe("clampImageCount / seed helpers", () => {
+  it("clamps count to 1–8", () => {
+    expect(clampImageCount(undefined)).toBe(1);
+    expect(clampImageCount(0)).toBe(1);
+    expect(clampImageCount(4)).toBe(4);
+    expect(clampImageCount(99)).toBe(8);
+  });
+
+  it("increments seeds and maps overall progress", () => {
+    expect(seedForIndex(10, 0)).toBe(10);
+    expect(seedForIndex(10, 2)).toBe(12);
+    expect(overallProgressPercent(0, 4, 50)).toBe(13);
+    expect(overallProgressPercent(3, 4, 100)).toBe(100);
   });
 });
 

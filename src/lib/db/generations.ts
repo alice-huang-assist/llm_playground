@@ -16,6 +16,8 @@ export interface GenerationSummary {
   sampler: string;
   usedReference: boolean;
   denoisingStrength: number | null;
+  /** Shared id for multi-image runs; null for single-image generations. */
+  batchId: string | null;
   createdAt: string;
 }
 
@@ -36,6 +38,7 @@ export interface GenerationInput {
   sampler: string;
   usedReference?: boolean;
   denoisingStrength?: number | null;
+  batchId?: string | null;
   /** Raw PNG (or other image) bytes. */
   imageBytes: Buffer;
 }
@@ -56,6 +59,7 @@ interface GenerationRow {
   created_at: string;
   used_reference: number | null;
   denoising_strength: number | null;
+  batch_id: string | null;
 }
 
 function generationsDir(): string {
@@ -83,6 +87,10 @@ function toSummary(row: GenerationRow): GenerationSummary {
       row.denoising_strength === null || row.denoising_strength === undefined
         ? null
         : Number(row.denoising_strength),
+    batchId:
+      typeof row.batch_id === "string" && row.batch_id !== ""
+        ? row.batch_id
+        : null,
     createdAt: row.created_at,
   };
 }
@@ -93,7 +101,7 @@ function toGeneration(row: GenerationRow): Generation {
 
 const SELECT_COLS = `id, provider_id, model_id, prompt, negative_prompt,
               width, height, steps, seed, cfg_scale, sampler, file_path, created_at,
-              used_reference, denoising_strength`;
+              used_reference, denoising_strength, batch_id`;
 
 export function listGenerations(db: DatabaseSync): GenerationSummary[] {
   const rows = db
@@ -103,6 +111,21 @@ export function listGenerations(db: DatabaseSync): GenerationSummary[] {
        ORDER BY created_at DESC`,
     )
     .all() as unknown as GenerationRow[];
+  return rows.map(toSummary);
+}
+
+export function listGenerationsByBatchId(
+  db: DatabaseSync,
+  batchId: string,
+): GenerationSummary[] {
+  const rows = db
+    .prepare(
+      `SELECT ${SELECT_COLS}
+       FROM generations
+       WHERE batch_id = ?
+       ORDER BY created_at ASC`,
+    )
+    .all(batchId) as unknown as GenerationRow[];
   return rows.map(toSummary);
 }
 
@@ -135,13 +158,17 @@ export function createGeneration(
     usedReference && input.denoisingStrength !== undefined
       ? input.denoisingStrength
       : null;
+  const batchId =
+    typeof input.batchId === "string" && input.batchId !== ""
+      ? input.batchId
+      : null;
 
   db.prepare(
     `INSERT INTO generations
        (id, provider_id, model_id, prompt, negative_prompt,
         width, height, steps, seed, cfg_scale, sampler, file_path, created_at,
-        used_reference, denoising_strength)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        used_reference, denoising_strength, batch_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.providerId,
@@ -158,6 +185,7 @@ export function createGeneration(
     now,
     usedReference ? 1 : 0,
     strength,
+    batchId,
   );
 
   const generation = getGeneration(db, id);
@@ -165,21 +193,45 @@ export function createGeneration(
   return generation;
 }
 
-export function deleteGeneration(db: DatabaseSync, id: string): boolean {
-  const existing = getGeneration(db, id);
-  if (!existing) return false;
-
-  db.prepare("DELETE FROM generations WHERE id = ?").run(id);
-
-  const absolute = path.isAbsolute(existing.filePath)
-    ? existing.filePath
-    : path.join(process.cwd(), existing.filePath);
+function unlinkGenerationFile(filePath: string) {
+  const absolute = path.isAbsolute(filePath)
+    ? filePath
+    : path.join(process.cwd(), filePath);
   try {
     unlinkSync(absolute);
   } catch {
     /* file may already be gone */
   }
+}
+
+export function deleteGeneration(db: DatabaseSync, id: string): boolean {
+  const existing = getGeneration(db, id);
+  if (!existing) return false;
+
+  db.prepare("DELETE FROM generations WHERE id = ?").run(id);
+  unlinkGenerationFile(existing.filePath);
   return true;
+}
+
+/** Delete every generation sharing a batch id. Returns how many rows were removed. */
+export function deleteGenerationsByBatchId(
+  db: DatabaseSync,
+  batchId: string,
+): number {
+  if (batchId === "") return 0;
+  const rows = db
+    .prepare(
+      `SELECT ${SELECT_COLS}
+       FROM generations WHERE batch_id = ?`,
+    )
+    .all(batchId) as unknown as GenerationRow[];
+  if (rows.length === 0) return 0;
+
+  db.prepare("DELETE FROM generations WHERE batch_id = ?").run(batchId);
+  for (const row of rows) {
+    unlinkGenerationFile(row.file_path);
+  }
+  return rows.length;
 }
 
 /** Resolve on-disk path for serving a generation image. */

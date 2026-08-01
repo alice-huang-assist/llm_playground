@@ -41,6 +41,10 @@ export const DEFAULT_DENOISING_STRENGTH = 0.75;
 /** Hard cap on reference image decoded bytes (AC-7). */
 export const MAX_REFERENCE_BYTES = 10 * 1024 * 1024;
 
+export const DEFAULT_IMAGE_COUNT = 1;
+export const MIN_IMAGE_COUNT = 1;
+export const MAX_IMAGE_COUNT = 8;
+
 function roundToStep(value: number, step: number): number {
   return Math.round(value / step) * step;
 }
@@ -91,6 +95,49 @@ export function clampImageParams(
 /** Seed value for Forge: -1 when unset (random). */
 export function forgeSeed(seed: number | null): number {
   return seed === null ? -1 : seed;
+}
+
+/** Clamp image count to 1–8 (default 1). */
+export function clampImageCount(
+  value: unknown,
+  fallback: number = DEFAULT_IMAGE_COUNT,
+): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(
+    MAX_IMAGE_COUNT,
+    Math.max(MIN_IMAGE_COUNT, Math.round(numeric)),
+  );
+}
+
+/**
+ * Concrete base seed for a multi-image run. When the UI left seed empty,
+ * pick a random base so we can increment (AC-2).
+ */
+export function resolveBaseSeed(seed: number | null): number {
+  if (seed !== null) return seed;
+  return Math.floor(Math.random() * 2_147_483_647);
+}
+
+/** Seed for image index i in a batch (0-based). */
+export function seedForIndex(baseSeed: number, index: number): number {
+  return baseSeed + index;
+}
+
+/**
+ * Map per-image provider progress into one overall 0–100 bar for a batch.
+ */
+export function overallProgressPercent(
+  imageIndex: number,
+  imageCount: number,
+  localPercent: number,
+): number {
+  if (imageCount <= 0) return 0;
+  const local = Math.min(100, Math.max(0, localPercent)) / 100;
+  const ratio = (imageIndex + local) / imageCount;
+  if (ratio <= 0) return 0;
+  if (ratio >= 1) return 100;
+  return Math.round(ratio * 100);
 }
 
 export function clampDenoisingStrength(
