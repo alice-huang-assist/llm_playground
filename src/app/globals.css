@@ -1,57 +1,240 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-  color-scheme: light;
-}
+@import "tailwindcss";
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    color-scheme: dark;
+/*
+ * The theme preference is three-state (`light` / `dark` / `system`), written to
+ * `<html data-theme>` by THEME_BOOTSTRAP_SCRIPT before paint. `system` carries
+ * no palette of its own — it defers to `prefers-color-scheme`. Every dark rule
+ * below therefore has to match twice, and so does the `dark:` variant.
+ */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    &:where([data-theme="system"], [data-theme="system"] *) {
+      @slot;
+    }
   }
 }
 
-html[data-theme="light"] {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ------------------------------------------------------------------------- *
+ * Palette — warm creative studio.
+ *
+ * Raw values live here rather than in `@theme` because they have to change per
+ * theme state; `@theme inline` below maps them into Tailwind's namespaces by
+ * reference, so utilities resolve whichever value is currently in scope.
+ *
+ * Every text/surface pair is WCAG AA (>= 4.5:1). Measured, lowest first:
+ *   light  ink-subtle/surface-sunken 4.93  ink-subtle/canvas 5.28  muted/canvas 6.98
+ *          on-accent/accent 5.18  accent-text/canvas 6.94  success/canvas 4.86
+ *   dark   ink-subtle/surface 4.89  ink-subtle/canvas 5.37  muted/surface 6.29
+ *          on-accent/accent 6.72  accent-text/canvas 10.80  danger/canvas 6.59
+ * ------------------------------------------------------------------------- */
+
+:root {
+  --canvas: #faf9f7;
+  --surface: #ffffff;
+  --surface-sunken: #f3f1ed;
+
+  --border: #e7e3dc;
+  --border-strong: #d5cfc5;
+
+  --ink: #1c1917;
+  --ink-muted: #5c554d;
+  --ink-subtle: #6f675e;
+
+  --accent: #c2410c;
+  --accent-hover: #9a3412;
+  --accent-text: #9a3412;
+  --accent-subtle: #fff3ec;
+  --on-accent: #ffffff;
+
+  --danger: #b4241f;
+  --success: #3f7a4e;
+
+  /* Retained for `ThemeToggle.module.css` and `ImageLightbox.module.css`,
+     which still read them. Not part of the new token vocabulary. */
+  --background: var(--canvas);
+  --foreground: var(--ink);
+
   color-scheme: light;
 }
 
 html[data-theme="dark"] {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+  --canvas: #171512;
+  --surface: #211e1a;
+  --surface-sunken: #12100e;
+
+  --border: #322d27;
+  --border-strong: #453e36;
+
+  --ink: #f5f1ea;
+  --ink-muted: #a79e92;
+  --ink-subtle: #948a7d;
+
+  --accent: #f97316;
+  --accent-hover: #fb8b3c;
+  --accent-text: #fdba74;
+  --accent-subtle: #2a1c12;
+  --on-accent: #1a0f07;
+
+  --danger: #f87171;
+  --success: #6ee7a0;
+
   color-scheme: dark;
 }
 
-html {
-  height: 100%;
+@media (prefers-color-scheme: dark) {
+  html[data-theme="system"] {
+    --canvas: #171512;
+    --surface: #211e1a;
+    --surface-sunken: #12100e;
+
+    --border: #322d27;
+    --border-strong: #453e36;
+
+    --ink: #f5f1ea;
+    --ink-muted: #a79e92;
+    --ink-subtle: #948a7d;
+
+    --accent: #f97316;
+    --accent-hover: #fb8b3c;
+    --accent-text: #fdba74;
+    --accent-subtle: #2a1c12;
+    --on-accent: #1a0f07;
+
+    --danger: #f87171;
+    --success: #6ee7a0;
+
+    color-scheme: dark;
+  }
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-text: var(--accent-text);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-on-accent: var(--on-accent);
+
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+
+  --font-display: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.15;
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.25;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.6;
+  --text-label: 0.8125rem;
+  --text-label--line-height: 1.45;
+  --text-label--font-weight: 500;
+  --text-label--letter-spacing: 0.01em;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.4;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-full: 9999px;
+
+  /* Warm-tinted rather than neutral grey — these sit on a warm canvas.
+     Dark mode leans on borders instead; shadows read as noise there. */
+  --shadow-sm: 0 1px 2px rgb(28 25 23 / 0.05);
+  --shadow-md: 0 4px 12px rgb(28 25 23 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(28 25 23 / 0.12);
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-control: 150ms;
+  --duration-panel: 250ms;
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-body {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  html {
+    height: 100%;
+  }
+
+  html,
+  body {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    color: var(--color-ink);
+    background: var(--color-canvas);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  * {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  /* Headings pick up the display face; existing route styles keep their own
+     sizes and weights, which outrank this by specificity. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+  }
+
+  /* Preflight zeroes list styling, but this app's reset never did — restore it
+     so `/docs/images` keeps its markers. Route styles that opt out (such as the
+     chat conversation) are unlayered and still win. */
+  ol {
+    list-style: decimal;
+  }
+
+  ul {
+    list-style: disc;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
