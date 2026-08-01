@@ -24,8 +24,10 @@ import { groupGenerations } from "@/lib/generation-history";
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
+  DEFAULT_COMFYUI_BASE_URL,
 } from "@/lib/providers/comfyui-shared";
 import {
+  DEFAULT_FORGE_BASE_URL,
   FORGE_PROVIDER_ID,
   FORGE_PROVIDER_NAME,
 } from "@/lib/providers/forge-shared";
@@ -88,7 +90,9 @@ export default function GeneratePage() {
   const [sampler, setSampler] = useState("");
   const [reachable, setReachable] = useState(true);
   const [reachError, setReachError] = useState<string | null>(null);
-  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:7860");
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_FORGE_BASE_URL);
+  const [forgeUrl, setForgeUrl] = useState(DEFAULT_FORGE_BASE_URL);
+  const [comfyUrl, setComfyUrl] = useState(DEFAULT_COMFYUI_BASE_URL);
 
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -215,6 +219,14 @@ export default function GeneratePage() {
           provider.reachable ? null : (provider.error ?? "Unreachable"),
         );
         setBaseUrl(provider.baseUrl);
+        for (const entry of modelsPayload.providers) {
+          if (entry.providerId === FORGE_PROVIDER_ID) {
+            setForgeUrl(entry.baseUrl);
+          }
+          if (entry.providerId === COMFYUI_PROVIDER_ID) {
+            setComfyUrl(entry.baseUrl);
+          }
+        }
         setModels(provider.models);
         setModelId((current) => {
           if (
@@ -563,6 +575,22 @@ export default function GeneratePage() {
           <Link className={styles.navLink} href="/settings">
             Settings
           </Link>
+          <a
+            className={styles.navLink}
+            href={forgeUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Forge
+          </a>
+          <a
+            className={styles.navLink}
+            href={comfyUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            ComfyUI
+          </a>
           <ThemeToggle />
         </nav>
       </div>
@@ -576,7 +604,10 @@ export default function GeneratePage() {
           {!reachable && (
             <p className={styles.banner} role="status">
               {providerId === COMFYUI_PROVIDER_ID ? "ComfyUI" : "Forge"} isn’t
-              reachable at <code>{baseUrl}</code>
+              reachable at{" "}
+              <a href={baseUrl} target="_blank" rel="noreferrer">
+                <code>{baseUrl}</code>
+              </a>
               {reachError ? ` (${reachError})` : ""}. Check{" "}
               <Link href="/settings">Settings</Link> and see the{" "}
               <Link href="/docs/images">setup docs</Link>.
