@@ -6,6 +6,7 @@ import {
   comfyTxt2Img,
   comfyWebSocketUrl,
   isSd3Checkpoint,
+  isZImageModel,
   listComfyModels,
   listComfySamplers,
   normalizeComfyBaseUrl,
@@ -130,6 +131,63 @@ describe("buildTxt2ImgWorkflow", () => {
     expect(workflow["6"]).toMatchObject({ inputs: { clip: ["4", 1] } });
     expect(workflow["3"]).toMatchObject({ inputs: { model: ["11", 0] } });
   });
+
+  it("wires Z-Image to UNET/CLIP/VAE loaders with AuraFlow and simple scheduler", () => {
+    const workflow = buildTxt2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "z_image_turbo_bf16.safetensors",
+      steps: 8,
+      cfgScale: 1,
+      sampler: "res_multistep",
+    });
+
+    expect(workflow).toMatchObject({
+      "1": {
+        class_type: "UNETLoader",
+        inputs: {
+          unet_name: "z_image_turbo_bf16.safetensors",
+          weight_dtype: "default",
+        },
+      },
+      "2": {
+        class_type: "CLIPLoader",
+        inputs: {
+          clip_name: "qwen_3_4b.safetensors",
+          type: "lumina2",
+        },
+      },
+      "3": {
+        class_type: "VAELoader",
+        inputs: { vae_name: "ae.safetensors" },
+      },
+      "4": {
+        class_type: "ModelSamplingAuraFlow",
+        inputs: { model: ["1", 0], shift: 3 },
+      },
+      "5": { class_type: "EmptySD3LatentImage" },
+      "6": { inputs: { text: "a cat", clip: ["2", 0] } },
+      "7": { inputs: { text: "blur", clip: ["2", 0] } },
+      "8": {
+        class_type: "KSampler",
+        inputs: {
+          seed: 42,
+          steps: 8,
+          cfg: 1,
+          sampler_name: "res_multistep",
+          scheduler: "simple",
+          denoise: 1,
+          model: ["4", 0],
+          positive: ["6", 0],
+          negative: ["7", 0],
+          latent_image: ["5", 0],
+        },
+      },
+      "9": {
+        class_type: "VAEDecode",
+        inputs: { samples: ["8", 0], vae: ["3", 0] },
+      },
+    });
+  });
 });
 
 describe("isSd3Checkpoint", () => {
@@ -150,6 +208,24 @@ describe("isSd3Checkpoint", () => {
     "model.safetensors",
   ])("ignores %s", (name) => {
     expect(isSd3Checkpoint(name)).toBe(false);
+  });
+});
+
+describe("isZImageModel", () => {
+  it.each([
+    "z_image_turbo_bf16.safetensors",
+    "z-image-turbo.safetensors",
+    "ZImage_base.safetensors",
+  ])("detects %s", (name) => {
+    expect(isZImageModel(name)).toBe(true);
+  });
+
+  it.each([
+    "sd_xl_base_1.0.safetensors",
+    "sd3.5_large.safetensors",
+    "model.safetensors",
+  ])("ignores %s", (name) => {
+    expect(isZImageModel(name)).toBe(false);
   });
 });
 
@@ -211,17 +287,79 @@ describe("buildImg2ImgWorkflow", () => {
     expect(workflow["4"]).toMatchObject({ inputs: { clip: ["1", 1] } });
     expect(workflow["6"]).toMatchObject({ inputs: { model: ["1", 0] } });
   });
+
+  it("wires Z-Image img2img through UNET loaders and VAEEncode", () => {
+    const workflow = buildImg2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "z_image_turbo_bf16.safetensors",
+      imageName: "ref.png",
+      denoisingStrength: 0.55,
+      sampler: "res_multistep",
+    });
+
+    expect(workflow).toMatchObject({
+      "1": { class_type: "UNETLoader" },
+      "2": { class_type: "CLIPLoader", inputs: { type: "lumina2" } },
+      "3": { class_type: "VAELoader", inputs: { vae_name: "ae.safetensors" } },
+      "4": { class_type: "ModelSamplingAuraFlow" },
+      "5": { class_type: "LoadImage", inputs: { image: "ref.png" } },
+      "6": {
+        class_type: "VAEEncode",
+        inputs: { pixels: ["5", 0], vae: ["3", 0] },
+      },
+      "9": {
+        class_type: "KSampler",
+        inputs: {
+          denoise: 0.55,
+          scheduler: "simple",
+          model: ["4", 0],
+          latent_image: ["6", 0],
+        },
+      },
+    });
+  });
 });
 
 describe("ComfyUI HTTP helpers", () => {
   it("lists checkpoints from /models/checkpoints", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      Response.json(["a.safetensors", "b.safetensors"]),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/models/checkpoints")) {
+        return Response.json(["a.safetensors", "b.safetensors"]);
+      }
+      if (url.endsWith("/models/diffusion_models")) {
+        return Response.json([]);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
 
     await expect(listComfyModels("http://comfy.test")).resolves.toEqual([
       { id: "a.safetensors", title: "a.safetensors" },
       { id: "b.safetensors", title: "b.safetensors" },
+    ]);
+  });
+
+  it("merges Z-Image diffusion models into the listing", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/models/checkpoints")) {
+        return Response.json(["sdxl.safetensors"]);
+      }
+      if (url.endsWith("/models/diffusion_models")) {
+        return Response.json([
+          "z_image_turbo_bf16.safetensors",
+          "other_unet.safetensors",
+        ]);
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    await expect(listComfyModels("http://comfy.test")).resolves.toEqual([
+      { id: "sdxl.safetensors", title: "sdxl.safetensors" },
+      {
+        id: "z_image_turbo_bf16.safetensors",
+        title: "z_image_turbo_bf16.safetensors",
+      },
     ]);
   });
 

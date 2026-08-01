@@ -10,6 +10,7 @@ import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
+  isZImageModel,
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
 } from "@/lib/providers/comfyui-shared";
@@ -23,6 +24,7 @@ export {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
+  isZImageModel,
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
 };
@@ -86,14 +88,174 @@ const SD3_TEXT_ENCODERS = [
 
 const SD3_SAMPLING_SHIFT = 3;
 
+/** Comfy-Org z_image_turbo split_files companions. */
+const Z_IMAGE_TEXT_ENCODER = "qwen_3_4b.safetensors";
+const Z_IMAGE_VAE = "ae.safetensors";
+const Z_IMAGE_SAMPLING_SHIFT = 3;
+const Z_IMAGE_SCHEDULER = "simple";
+
+/**
+ * UNETLoader + CLIP(lumina2) + VAE + ModelSamplingAuraFlow + EmptySD3Latent →
+ * KSampler → VAEDecode → SaveImage. Matches the local Z-Image-Turbo graph.
+ */
+function buildZImageTxt2ImgWorkflow(
+  request: ComfyTxt2ImgRequest,
+): Record<string, unknown> {
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: request.model,
+        weight_dtype: "default",
+      },
+    },
+    "2": {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: Z_IMAGE_TEXT_ENCODER,
+        type: "lumina2",
+        device: "default",
+      },
+    },
+    "3": {
+      class_type: "VAELoader",
+      inputs: { vae_name: Z_IMAGE_VAE },
+    },
+    "4": {
+      class_type: "ModelSamplingAuraFlow",
+      inputs: { model: ["1", 0], shift: Z_IMAGE_SAMPLING_SHIFT },
+    },
+    "5": {
+      class_type: "EmptySD3LatentImage",
+      inputs: {
+        width: request.width,
+        height: request.height,
+        batch_size: 1,
+      },
+    },
+    "6": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.prompt, clip: ["2", 0] },
+    },
+    "7": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["2", 0] },
+    },
+    "8": {
+      class_type: "KSampler",
+      inputs: {
+        seed: request.seed,
+        steps: request.steps,
+        cfg: request.cfgScale,
+        sampler_name: request.sampler,
+        scheduler: Z_IMAGE_SCHEDULER,
+        denoise: 1,
+        model: ["4", 0],
+        positive: ["6", 0],
+        negative: ["7", 0],
+        latent_image: ["5", 0],
+      },
+    },
+    "9": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["8", 0], vae: ["3", 0] },
+    },
+    "10": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "llm_playground_zimage",
+        images: ["9", 0],
+      },
+    },
+  };
+}
+
+/**
+ * Same Z-Image loaders/sampling as txt2img, but latent from LoadImage + VAEEncode.
+ */
+function buildZImageImg2ImgWorkflow(
+  request: ComfyImg2ImgRequest,
+): Record<string, unknown> {
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: request.model,
+        weight_dtype: "default",
+      },
+    },
+    "2": {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: Z_IMAGE_TEXT_ENCODER,
+        type: "lumina2",
+        device: "default",
+      },
+    },
+    "3": {
+      class_type: "VAELoader",
+      inputs: { vae_name: Z_IMAGE_VAE },
+    },
+    "4": {
+      class_type: "ModelSamplingAuraFlow",
+      inputs: { model: ["1", 0], shift: Z_IMAGE_SAMPLING_SHIFT },
+    },
+    "5": {
+      class_type: "LoadImage",
+      inputs: { image: request.imageName },
+    },
+    "6": {
+      class_type: "VAEEncode",
+      inputs: { pixels: ["5", 0], vae: ["3", 0] },
+    },
+    "7": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.prompt, clip: ["2", 0] },
+    },
+    "8": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["2", 0] },
+    },
+    "9": {
+      class_type: "KSampler",
+      inputs: {
+        seed: request.seed,
+        steps: request.steps,
+        cfg: request.cfgScale,
+        sampler_name: request.sampler,
+        scheduler: Z_IMAGE_SCHEDULER,
+        denoise: request.denoisingStrength,
+        model: ["4", 0],
+        positive: ["7", 0],
+        negative: ["8", 0],
+        latent_image: ["6", 0],
+      },
+    },
+    "10": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["9", 0], vae: ["3", 0] },
+    },
+    "11": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "llm_playground_zimage_i2i",
+        images: ["10", 0],
+      },
+    },
+  };
+}
+
 /**
  * Fixed CheckpointLoader → encode → EmptyLatent → KSampler → VAEDecode → SaveImage
  * workflow. Node ids stay stable so tests can assert shaping. SD3 checkpoints add
- * nodes 10/11 and rewire clip/model to them.
+ * nodes 10/11 and rewire clip/model to them. Z-Image uses a separate UNET graph.
  */
 export function buildTxt2ImgWorkflow(
   request: ComfyTxt2ImgRequest,
 ): Record<string, unknown> {
+  if (isZImageModel(request.model)) {
+    return buildZImageTxt2ImgWorkflow(request);
+  }
   const sd3 = isSd3Checkpoint(request.model);
   const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
   const clip = loadsExternalClip ? ["10", 0] : ["4", 1];
@@ -176,6 +338,9 @@ export function buildTxt2ImgWorkflow(
 export function buildImg2ImgWorkflow(
   request: ComfyImg2ImgRequest,
 ): Record<string, unknown> {
+  if (isZImageModel(request.model)) {
+    return buildZImageImg2ImgWorkflow(request);
+  }
   const sd3 = isSd3Checkpoint(request.model);
   const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
   const clip = loadsExternalClip ? ["9", 0] : ["1", 1];
@@ -261,10 +426,16 @@ async function comfyFetch(
   return response;
 }
 
-export async function listComfyModels(
-  baseUrl: string = getComfyBaseUrl(),
+function namesToModels(names: string[]): ComfyModel[] {
+  return names
+    .filter((name) => typeof name === "string" && name !== "")
+    .map((name) => ({ id: name, title: name }));
+}
+
+async function listCheckpointNames(
+  baseUrl: string,
   signal?: AbortSignal,
-): Promise<ComfyModel[]> {
+): Promise<string[]> {
   // Prefer the dedicated models endpoint; fall back to object_info.
   try {
     const response = await comfyFetch(baseUrl, "/models/checkpoints", {
@@ -272,9 +443,9 @@ export async function listComfyModels(
     });
     const payload = (await response.json()) as unknown;
     if (Array.isArray(payload)) {
-      return payload
-        .filter((name): name is string => typeof name === "string" && name !== "")
-        .map((name) => ({ id: name, title: name }));
+      return payload.filter(
+        (name): name is string => typeof name === "string" && name !== "",
+      );
     }
   } catch {
     /* try object_info */
@@ -288,11 +459,45 @@ export async function listComfyModels(
       input?: { required?: { ckpt_name?: [string[]] } };
     };
   };
-  const names =
-    info.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? [];
-  return names
-    .filter((name) => typeof name === "string" && name !== "")
-    .map((name) => ({ id: name, title: name }));
+  return (
+    info.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] ?? []
+  ).filter((name): name is string => typeof name === "string" && name !== "");
+}
+
+/** Best-effort Z-Image (and similar) entries from diffusion_models/. */
+async function listZImageDiffusionNames(
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  try {
+    const response = await comfyFetch(baseUrl, "/models/diffusion_models", {
+      signal,
+    });
+    const payload = (await response.json()) as unknown;
+    if (!Array.isArray(payload)) return [];
+    return payload.filter(
+      (name): name is string =>
+        typeof name === "string" && name !== "" && isZImageModel(name),
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function listComfyModels(
+  baseUrl: string = getComfyBaseUrl(),
+  signal?: AbortSignal,
+): Promise<ComfyModel[]> {
+  const checkpoints = await listCheckpointNames(baseUrl, signal);
+  const zImages = await listZImageDiffusionNames(baseUrl, signal);
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const name of [...checkpoints, ...zImages]) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    merged.push(name);
+  }
+  return namesToModels(merged);
 }
 
 export async function listComfySamplers(

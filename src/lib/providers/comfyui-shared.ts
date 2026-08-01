@@ -27,3 +27,16 @@ export function normalizeComfyBaseUrl(value: unknown): string | null {
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
   return trimmed;
 }
+
+/**
+ * Z-Image / Z-Image-Turbo live under ComfyUI `diffusion_models/`, not
+ * checkpoints. Name match covers `z_image_turbo_bf16.safetensors` and similar.
+ */
+export function isZImageModel(model: string): boolean {
+  return /z[_-]?image/i.test(model);
+}
+
+/** Recommended sampler / steps / CFG when the user picks a Z-Image model. */
+export const Z_IMAGE_DEFAULT_STEPS = 8;
+export const Z_IMAGE_DEFAULT_CFG = 1;
+export const Z_IMAGE_DEFAULT_SAMPLER = "res_multistep";

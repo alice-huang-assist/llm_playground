@@ -25,6 +25,10 @@ import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
+  isZImageModel,
+  Z_IMAGE_DEFAULT_CFG,
+  Z_IMAGE_DEFAULT_SAMPLER,
+  Z_IMAGE_DEFAULT_STEPS,
 } from "@/lib/providers/comfyui-shared";
 import {
   DEFAULT_FORGE_BASE_URL,
@@ -125,6 +129,20 @@ export default function GeneratePage() {
   function clearProgressUi() {
     setProgressPercent(null);
     setLivePreviewUrl(null);
+  }
+
+  /** User picked a model in the dropdown — apply Z-Image defaults when needed. */
+  function onModelSelect(nextModelId: string) {
+    setModelId(nextModelId);
+    if (!isZImageModel(nextModelId)) return;
+    setParams((current) => ({
+      ...current,
+      steps: Z_IMAGE_DEFAULT_STEPS,
+      cfgScale: Z_IMAGE_DEFAULT_CFG,
+    }));
+    if (samplers.includes(Z_IMAGE_DEFAULT_SAMPLER)) {
+      setSampler(Z_IMAGE_DEFAULT_SAMPLER);
+    }
   }
 
   function showGenerations(items: GenerationSummary[]) {
@@ -636,7 +654,7 @@ export default function GeneratePage() {
               <select
                 className={styles.select}
                 value={modelId}
-                onChange={(event) => setModelId(event.target.value)}
+                onChange={(event) => onModelSelect(event.target.value)}
                 disabled={busy || models.length === 0}
               >
                 {models.length === 0 ? (

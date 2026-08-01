@@ -124,13 +124,20 @@ export default function ImagesDocsPage() {
           </li>
           <li>
             Choose provider <strong>Forge</strong> or <strong>ComfyUI</strong>{" "}
-            and a checkpoint model. ComfyUI uses a fixed txt2img workflow
-            shipped with the app (no node editor).
+            and a model. ComfyUI uses fixed workflows shipped with the app (no
+            node editor): checkpoints via <code>CheckpointLoaderSimple</code>,
+            and <strong>Z-Image-Turbo</strong> via a dedicated UNET / CLIP /
+            VAE graph when the weights are present under ComfyUI{" "}
+            <code>models/diffusion_models/</code> (with{" "}
+            <code>text_encoders/qwen_3_4b.safetensors</code> and{" "}
+            <code>vae/ae.safetensors</code>).
           </li>
           <li>
             Enter a prompt (optional negative prompt). Adjust width, height,
-            steps, CFG, sampler, and seed. Empty seed means random. Scheduler is
-            fixed to <code>normal</code> for the ComfyUI workflow.
+            steps, CFG, sampler, and seed. Empty seed means random. Selecting
+            Z-Image applies steps 8 / CFG 1 / <code>res_multistep</code>. Comfy
+            scheduler is <code>normal</code> for checkpoints and{" "}
+            <code>simple</code> for Z-Image.
           </li>
           <li>
             Optional: attach a <strong>reference image</strong> to run img2img.

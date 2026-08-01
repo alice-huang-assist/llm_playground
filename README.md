@@ -79,13 +79,17 @@ Img2img is supported via an optional reference upload on `/generate`.
 ### How to use
 
 1. Open **Images** from the chat header (or go to `/generate`).
-2. Choose provider **Forge** or **ComfyUI** and a checkpoint.
+2. Choose provider **Forge** or **ComfyUI** and a model. ComfyUI lists shared
+   checkpoints plus Z-Image weights under
+   `vendors/ComfyUI/models/diffusion_models/` (needs matching
+   `text_encoders/qwen_3_4b.safetensors` and `vae/ae.safetensors`).
 3. Enter a prompt (optional negative prompt). Adjust width, height, steps, CFG,
    sampler, and seed (empty seed = random). ComfyUI uses a fixed txt2img
-   workflow (scheduler fixed to `normal`). Optionally attach a **reference
-   image** for img2img (denoising strength appears); clear it to return to
-   text-to-image. History records that a reference was used but does not
-   re-hydrate the file.
+   workflow (scheduler `normal` for checkpoints, `simple` for Z-Image).
+   Selecting Z-Image applies steps 8 / CFG 1 / `res_multistep`. Optionally
+   attach a **reference image** for img2img (denoising strength appears);
+   clear it to return to text-to-image. History records that a reference was
+   used but does not re-hydrate the file.
 4. Click **Generate**. **Stop** cancels the run; cancelled runs are not saved.
 5. History (right rail) stores successful generations on disk under
    `data/generations/` plus SQLite metadata (shared across providers). Click an
