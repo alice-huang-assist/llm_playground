@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { buildParameterPayload } from "@/lib/params";
+import type { ParameterKey } from "@/lib/params";
 import { providers } from "@/lib/providers/registry";
 import type { ChatMessage } from "@/lib/providers/types";
 
@@ -11,6 +13,7 @@ interface ChatRequestBody {
   model?: unknown;
   systemPrompt?: unknown;
   messages?: unknown;
+  parameters?: unknown;
 }
 
 function isHistoryMessage(value: unknown): value is ChatMessage {
@@ -54,8 +57,15 @@ export async function POST(request: Request) {
     ? [{ role: "system", content: systemPrompt }, ...body.messages]
     : [...body.messages];
 
+  // Clamped again here: the browser is not the authority on what is in range.
+  const parameters = buildParameterPayload(
+    typeof body.parameters === "object" && body.parameters !== null
+      ? (body.parameters as Partial<Record<ParameterKey, unknown>>)
+      : null,
+  );
+
   const deltas = provider
-    .chat({ model: body.model, messages, signal: request.signal })
+    .chat({ model: body.model, messages, parameters, signal: request.signal })
     [Symbol.asyncIterator]();
 
   // Pull the first delta before answering so a provider that is down becomes a

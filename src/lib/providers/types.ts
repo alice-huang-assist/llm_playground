@@ -1,3 +1,5 @@
+import type { ParameterPayload } from "@/lib/params";
+
 /** A model offered by a provider, as surfaced to the rest of the app. */
 export interface Model {
   /** Identifier the provider expects in a chat request, e.g. `qwen3:4b`. */
@@ -16,6 +18,8 @@ export interface ChatMessage {
 export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
+  /** Sampling parameters, already clamped; anything absent is left to the server. */
+  parameters?: ParameterPayload;
   /** Aborting this cancels the in-flight request to the provider. */
   signal?: AbortSignal;
 }

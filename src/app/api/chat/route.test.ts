@@ -1,14 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ParameterPayload } from "@/lib/params";
 import type { ChatMessage, Provider } from "@/lib/providers/types";
 
 const fake = vi.hoisted(() => {
   const state: {
     sent: ChatMessage[] | null;
+    parameters: ParameterPayload | undefined;
     signal: AbortSignal | undefined;
     deltas: string[];
     failWith: Error | null;
-  } = { sent: null, signal: undefined, deltas: [], failWith: null };
+  } = {
+    sent: null,
+    parameters: undefined,
+    signal: undefined,
+    deltas: [],
+    failWith: null,
+  };
 
   const provider = {
     id: "ollama",
@@ -18,9 +26,11 @@ const fake = vi.hoisted(() => {
     },
     async *chat(request: {
       messages: ChatMessage[];
+      parameters?: ParameterPayload;
       signal?: AbortSignal;
     }): AsyncGenerator<string> {
       state.sent = request.messages;
+      state.parameters = request.parameters;
       state.signal = request.signal;
       if (state.failWith) throw state.failWith;
       for (const delta of state.deltas) yield delta;
@@ -48,6 +58,7 @@ function post(body: unknown) {
 
 beforeEach(() => {
   fake.state.sent = null;
+  fake.state.parameters = undefined;
   fake.state.signal = undefined;
   fake.state.deltas = [];
   fake.state.failWith = null;
@@ -116,6 +127,51 @@ describe("POST /api/chat", () => {
     await response.text();
 
     expect(fake.state.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("forwards only the parameters that differ from their defaults", async () => {
+    fake.state.deltas = ["ok"];
+
+    const response = await post({
+      providerId: "ollama",
+      model: "qwen3:4b",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: { temperature: 0, seed: 42, top_p: 0.9, top_k: 40 },
+    });
+    await response.text();
+
+    expect(fake.state.parameters).toEqual({ temperature: 0, seed: 42 });
+  });
+
+  it("clamps parameters server-side, never trusting the browser", async () => {
+    fake.state.deltas = ["ok"];
+
+    const response = await post({
+      providerId: "ollama",
+      model: "qwen3:4b",
+      messages: [{ role: "user", content: "hi" }],
+      parameters: { temperature: 99, top_p: -1, max_tokens: "12.7" },
+    });
+    await response.text();
+
+    expect(fake.state.parameters).toEqual({
+      temperature: 2,
+      top_p: 0,
+      max_tokens: 13,
+    });
+  });
+
+  it("sends no parameters when the body carries none", async () => {
+    fake.state.deltas = ["ok"];
+
+    const response = await post({
+      providerId: "ollama",
+      model: "qwen3:4b",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    await response.text();
+
+    expect(fake.state.parameters).toEqual({});
   });
 
   it("answers 502 with a readable message when the provider fails", async () => {

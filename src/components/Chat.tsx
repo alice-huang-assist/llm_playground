@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import type { ParameterValues } from "@/lib/params";
 import type { Model } from "@/lib/providers/types";
 
 import SystemPrompt from "./SystemPrompt";
@@ -15,7 +16,13 @@ interface Turn {
   content: string;
 }
 
-export default function Chat({ model }: { model: Model | null }) {
+export default function Chat({
+  model,
+  parameters,
+}: {
+  model: Model | null;
+  parameters: ParameterValues;
+}) {
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
@@ -79,6 +86,7 @@ export default function Chat({ model }: { model: Model | null }) {
           model: model.id,
           systemPrompt,
           messages: [...history, { role: "user", content: prompt }],
+          parameters,
         }),
         signal: controller.signal,
       });
