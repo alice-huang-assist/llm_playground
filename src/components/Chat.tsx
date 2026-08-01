@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 
+import type { SessionMessage } from "@/lib/db/sessions";
 import type { ParameterValues } from "@/lib/params";
 import type { Model } from "@/lib/providers/types";
 
@@ -19,17 +20,34 @@ interface Turn {
 export default function Chat({
   model,
   parameters,
+  initialSystemPrompt = DEFAULT_SYSTEM_PROMPT,
+  initialMessages = [],
+  onPersist,
 }: {
   model: Model | null;
   parameters: ParameterValues;
+  /** Restored from a saved session; only read when the component mounts. */
+  initialSystemPrompt?: string;
+  initialMessages?: SessionMessage[];
+  /** Called once a turn settles, so the session can be written to disk. */
+  onPersist?: (state: {
+    systemPrompt: string;
+    messages: SessionMessage[];
+  }) => void;
 }) {
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_SYSTEM_PROMPT);
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [systemPrompt, setSystemPrompt] = useState(initialSystemPrompt);
+  const [turns, setTurns] = useState<Turn[]>(() =>
+    initialMessages.map((message, index) => ({
+      id: index + 1,
+      role: message.role,
+      content: message.content,
+    })),
+  );
   const [input, setInput] = useState("");
   const [streamingId, setStreamingId] = useState<number | null>(null);
 
   const streaming = streamingId !== null;
-  const nextId = useRef(0);
+  const nextId = useRef(initialMessages.length);
   const abortRef = useRef<AbortController | null>(null);
 
   const takeId = () => {
@@ -45,6 +63,18 @@ export default function Chat({
     );
   };
 
+  const persist = (messages: SessionMessage[], prompt: string) => {
+    onPersist?.({ systemPrompt: prompt, messages });
+  };
+
+  const conversation = (): SessionMessage[] =>
+    turns
+      .filter((turn) => turn.role !== "error")
+      .map((turn) => ({
+        role: turn.role as SessionMessage["role"],
+        content: turn.content,
+      }));
+
   const replaceWithError = (id: number, message: string) => {
     setTurns((current) =>
       current.map((turn) =>
@@ -59,9 +89,7 @@ export default function Chat({
 
     // Every request carries the full prior conversation; error notices are not
     // part of what the model saw.
-    const history = turns
-      .filter((turn) => turn.role !== "error")
-      .map((turn) => ({ role: turn.role, content: turn.content }));
+    const history: SessionMessage[] = conversation();
 
     const userTurn: Turn = { id: takeId(), role: "user", content: prompt };
     const replyId = takeId();
@@ -76,6 +104,7 @@ export default function Chat({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let reply = "";
 
     try {
       const response = await fetch("/api/chat", {
@@ -108,7 +137,9 @@ export default function Chat({
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        appendTo(replyId, decoder.decode(value, { stream: true }));
+        const chunk = decoder.decode(value, { stream: true });
+        reply += chunk;
+        appendTo(replyId, chunk);
       }
     } catch (error) {
       // Stopping is a deliberate act, not a failure: the partial reply stays.
@@ -129,12 +160,25 @@ export default function Chat({
             turn.content !== "",
         ),
       );
+
+      // The turn has settled — including a stop, which keeps its partial text.
+      // Saving here is why a reload can only lose a reply still streaming.
+      const settled: SessionMessage[] = [
+        ...history,
+        { role: "user", content: prompt },
+      ];
+      if (reply !== "") settled.push({ role: "assistant", content: reply });
+      persist(settled, systemPrompt);
     }
   }
 
   return (
     <section className={styles.chat}>
-      <SystemPrompt value={systemPrompt} onChange={setSystemPrompt} />
+      <SystemPrompt
+        value={systemPrompt}
+        onChange={setSystemPrompt}
+        onCommit={() => persist(conversation(), systemPrompt)}
+      />
 
       <ol className={styles.conversation}>
         {turns.length === 0 && (
@@ -191,7 +235,10 @@ export default function Chat({
           <button
             type="button"
             className={styles.button}
-            onClick={() => setTurns([])}
+            onClick={() => {
+              setTurns([]);
+              persist([], systemPrompt);
+            }}
             disabled={streaming || turns.length === 0}
           >
             Clear

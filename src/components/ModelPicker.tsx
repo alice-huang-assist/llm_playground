@@ -12,11 +12,14 @@ function modelKey(model: Model) {
 
 export default function ModelPicker({
   reloadToken = 0,
+  value,
   onChange,
   onLoad,
 }: {
   /** Changing this re-runs discovery, so a fresh install shows up in place. */
   reloadToken?: number;
+  /** `providerId:modelId` of the selection, when a parent owns it. */
+  value?: string;
   /** Notified whenever the selection changes, so a parent can chat with it. */
   onChange?: (model: Model | null) => void;
   /** Reports each listing, so a parent can react to provider reachability. */
@@ -66,7 +69,9 @@ export default function ModelPicker({
     provider.reachable ? provider.models : [],
   );
   const unreachable = providers.filter((provider) => !provider.reachable);
-  const selected = models.find((model) => modelKey(model) === selectedKey);
+  // A parent restoring a saved session owns the selection; otherwise it is ours.
+  const currentKey = value ?? selectedKey;
+  const selected = models.find((model) => modelKey(model) === currentKey);
 
   return (
     <div className={styles.picker}>
@@ -76,7 +81,7 @@ export default function ModelPicker({
       <select
         id="model"
         className={styles.select}
-        value={selectedKey}
+        value={currentKey}
         onChange={(event) => {
           const key = event.target.value;
           setSelectedKey(key);
