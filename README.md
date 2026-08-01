@@ -3,10 +3,20 @@
 A local-first, OpenAI-playground-style web app for testing open-weight LLMs with full
 parameter control.
 
-Nothing is built yet — this repo currently holds only the Finn-loop skills and project
-scaffolding. The application is specified as a chain of Linear issues in the
+The app is specified as a chain of Linear issues in the
 [LLM Playground](https://linear.app/aliceassist/project/llm-playground-d0b0acff5b9a)
-project on team `ALI`.
+project on team `ALI`. So far it discovers models across local runtimes and lets one be
+selected — chat itself is not built yet.
+
+## Getting started
+
+```bash
+npm install
+npm run dev     # http://localhost:3000
+```
+
+`npm run lint`, `npm run typecheck`, and `npm test` are the checks CI runs on every pull
+request.
 
 ## Planned scope
 
