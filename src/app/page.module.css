@@ -8,6 +8,18 @@
   max-width: 72rem;
 }
 
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settingsLink {
+  font-size: 0.875rem;
+  text-decoration: underline;
+}
+
 .title {
   font-size: 1.75rem;
   font-weight: 700;

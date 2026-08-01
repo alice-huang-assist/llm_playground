@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  getProviders,
   listAllProviderModels,
-  providers,
+  localProviders,
   safeListModels,
 } from "./registry";
 import type { Model, Provider } from "./types";
@@ -29,12 +30,43 @@ function model(id: string, providerId: string, providerName: string): Model {
   return { id, providerId, providerName };
 }
 
-describe("providers", () => {
+describe("localProviders", () => {
   it("registers Ollama and LM Studio", () => {
-    expect(providers.map((provider) => [provider.id, provider.name])).toEqual([
+    expect(
+      localProviders.map((provider) => [provider.id, provider.name]),
+    ).toEqual([
       ["ollama", "Ollama"],
       ["lmstudio", "LM Studio"],
     ]);
+  });
+});
+
+describe("getProviders", () => {
+  it("omits OpenRouter when no key is stored", () => {
+    expect(getProviders(null).map((provider) => provider.id)).toEqual([
+      "ollama",
+      "lmstudio",
+    ]);
+  });
+
+  it("omits OpenRouter for an empty key", () => {
+    expect(getProviders("").map((provider) => provider.id)).toEqual([
+      "ollama",
+      "lmstudio",
+    ]);
+  });
+
+  it("appends OpenRouter once a key is present", () => {
+    expect(getProviders("sk-or-test").map((provider) => provider.id)).toEqual([
+      "ollama",
+      "lmstudio",
+      "openrouter",
+    ]);
+  });
+
+  it("leaves the local providers untouched either way", () => {
+    expect(getProviders(null)).toEqual(localProviders);
+    expect(getProviders("sk-or-test").slice(0, 2)).toEqual(localProviders);
   });
 });
 

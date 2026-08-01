@@ -40,6 +40,16 @@ export const MIGRATIONS: Migration[] = [
       CREATE INDEX sessions_sequence ON sessions (sequence DESC);
     `,
   },
+  {
+    version: 2,
+    up: `
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.reduce(
