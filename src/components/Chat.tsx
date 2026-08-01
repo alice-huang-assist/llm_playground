@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 
 import type { SessionMessage } from "@/lib/db/sessions";
+import type { ParameterValues } from "@/lib/params";
 import type { Model } from "@/lib/providers/types";
 
 import SystemPrompt from "./SystemPrompt";
@@ -18,11 +19,13 @@ interface Turn {
 
 export default function Chat({
   model,
+  parameters,
   initialSystemPrompt = DEFAULT_SYSTEM_PROMPT,
   initialMessages = [],
   onPersist,
 }: {
   model: Model | null;
+  parameters: ParameterValues;
   /** Restored from a saved session; only read when the component mounts. */
   initialSystemPrompt?: string;
   initialMessages?: SessionMessage[];
@@ -112,6 +115,7 @@ export default function Chat({
           model: model.id,
           systemPrompt,
           messages: [...history, { role: "user", content: prompt }],
+          parameters,
         }),
         signal: controller.signal,
       });

@@ -5,8 +5,10 @@ import { useCallback, useEffect, useState } from "react";
 import Chat from "@/components/Chat";
 import ModelInstaller from "@/components/ModelInstaller";
 import ModelPicker from "@/components/ModelPicker";
+import ParameterSidebar from "@/components/ParameterSidebar";
 import SessionSidebar from "@/components/SessionSidebar";
 import type { Session, SessionMessage, SessionSummary } from "@/lib/db/sessions";
+import { DEFAULT_PARAMETERS, type ParameterValues } from "@/lib/params";
 import { OLLAMA_PROVIDER_ID } from "@/lib/providers/ollama";
 import type { Model, ProviderModels } from "@/lib/providers/types";
 
@@ -16,6 +18,11 @@ export default function Home() {
   const [model, setModel] = useState<Model | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [ollamaReachable, setOllamaReachable] = useState(false);
+
+  // Parameters stay session-independent on purpose (ALI-9 NG-1).
+  const [parameters, setParameters] = useState<ParameterValues>({
+    ...DEFAULT_PARAMETERS,
+  });
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [active, setActive] = useState<Session | null>(null);
@@ -153,6 +160,7 @@ export default function Home() {
             <Chat
               key={active.id}
               model={model}
+              parameters={parameters}
               initialSystemPrompt={
                 active.systemPrompt === "" ? undefined : active.systemPrompt
               }
@@ -162,14 +170,17 @@ export default function Home() {
           )}
         </div>
 
-        <SessionSidebar
-          sessions={sessions}
-          activeId={active?.id ?? null}
-          onSelect={(id) => void openSession(id)}
-          onNew={() => void startSession()}
-          onRename={(id, name) => void patchSession(id, { name })}
-          onDelete={(id) => void handleDelete(id)}
-        />
+        <div className={styles.rail}>
+          <SessionSidebar
+            sessions={sessions}
+            activeId={active?.id ?? null}
+            onSelect={(id) => void openSession(id)}
+            onNew={() => void startSession()}
+            onRename={(id, name) => void patchSession(id, { name })}
+            onDelete={(id) => void handleDelete(id)}
+          />
+          <ParameterSidebar values={parameters} onChange={setParameters} />
+        </div>
       </div>
     </main>
   );

@@ -20,12 +20,19 @@
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 18rem;
+  grid-template-columns: minmax(0, 1fr) 19rem;
   gap: 2rem;
   align-items: start;
 }
 
 .column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  min-width: 0;
+}
+
+.rail {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
