@@ -6,12 +6,21 @@ import {
   DEFAULT_FORGE_BASE_URL,
   FORGE_BASE_URL_KEY,
 } from "@/lib/providers/forge";
+import {
+  COMFYUI_BASE_URL_KEY,
+  DEFAULT_COMFYUI_BASE_URL,
+} from "@/lib/providers/comfyui";
 import { OPENROUTER_API_KEY } from "@/lib/providers/openrouter";
 
 const KEY = "sk-or-v1-super-secret-value-9876";
 
 const defaultForge = {
   baseUrl: DEFAULT_FORGE_BASE_URL,
+  isDefault: true,
+};
+
+const defaultComfy = {
+  baseUrl: DEFAULT_COMFYUI_BASE_URL,
   isDefault: true,
 };
 
@@ -55,6 +64,7 @@ describe("GET /api/settings", () => {
     await expect((await GET()).json()).resolves.toEqual({
       openrouter: { configured: false, hint: null },
       forge: defaultForge,
+      comfyui: defaultComfy,
     });
   });
 
@@ -67,6 +77,7 @@ describe("GET /api/settings", () => {
     expect(JSON.parse(raw)).toEqual({
       openrouter: { configured: true, hint: "…9876" },
       forge: defaultForge,
+      comfyui: defaultComfy,
     });
     expect(raw).not.toContain(KEY);
     expect(raw).not.toContain("super-secret");
@@ -84,6 +95,7 @@ describe("PUT /api/settings", () => {
     expect(JSON.parse(raw)).toEqual({
       openrouter: { configured: true, hint: "…9876" },
       forge: defaultForge,
+      comfyui: defaultComfy,
     });
     expect(raw).not.toContain(KEY);
     expect(getSetting(fake.db as never, OPENROUTER_API_KEY)).toBe(KEY);
@@ -96,9 +108,24 @@ describe("PUT /api/settings", () => {
     await expect(response.json()).resolves.toEqual({
       openrouter: { configured: false, hint: null },
       forge: { baseUrl: "http://127.0.0.1:7861", isDefault: false },
+      comfyui: defaultComfy,
     });
     expect(getSetting(fake.db as never, FORGE_BASE_URL_KEY)).toBe(
       "http://127.0.0.1:7861",
+    );
+  });
+
+  it("stores a custom ComfyUI base URL", async () => {
+    const response = await put({ comfyBaseUrl: "http://127.0.0.1:8190/" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      openrouter: { configured: false, hint: null },
+      forge: defaultForge,
+      comfyui: { baseUrl: "http://127.0.0.1:8190", isDefault: false },
+    });
+    expect(getSetting(fake.db as never, COMFYUI_BASE_URL_KEY)).toBe(
+      "http://127.0.0.1:8190",
     );
   });
 
@@ -166,7 +193,8 @@ describe("PUT /api/settings", () => {
     const response = await put({});
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Provide an OpenRouter API key and/or a Forge base URL.",
+      error:
+        "Provide an OpenRouter API key, Forge base URL, and/or ComfyUI base URL.",
     });
   });
 });
@@ -180,6 +208,7 @@ describe("DELETE /api/settings", () => {
     await expect(response.json()).resolves.toEqual({
       openrouter: { configured: false, hint: null },
       forge: defaultForge,
+      comfyui: defaultComfy,
     });
     expect(getSetting(fake.db as never, OPENROUTER_API_KEY)).toBeNull();
   });

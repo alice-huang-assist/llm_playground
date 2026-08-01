@@ -112,7 +112,7 @@ describe("POST /api/images/generate", () => {
 
   it("rejects an unknown provider", async () => {
     const response = await post({
-      providerId: "comfyui",
+      providerId: "midjourney",
       model: "x",
       prompt: "hi",
       sampler: "Euler a",

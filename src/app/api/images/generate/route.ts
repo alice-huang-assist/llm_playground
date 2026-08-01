@@ -4,6 +4,13 @@ import { getDatabase } from "@/lib/db/client";
 import { createGeneration } from "@/lib/db/generations";
 import { clampImageParams, forgeSeed } from "@/lib/image-params";
 import {
+  COMFYUI_PROVIDER_ID,
+  comfyRandomSeed,
+  comfyTxt2Img,
+  getComfyBaseUrl,
+  interruptComfy,
+} from "@/lib/providers/comfyui";
+import {
   FORGE_PROVIDER_ID,
   forgeTxt2Img,
   getForgeBaseUrl,
@@ -38,7 +45,10 @@ export async function POST(request: Request) {
 
   const providerId =
     typeof body.providerId === "string" ? body.providerId.trim() : "";
-  if (providerId !== FORGE_PROVIDER_ID) {
+  if (
+    providerId !== FORGE_PROVIDER_ID &&
+    providerId !== COMFYUI_PROVIDER_ID
+  ) {
     return badRequest(
       providerId === ""
         ? "A provider must be selected."
@@ -66,32 +76,59 @@ export async function POST(request: Request) {
     seed: body.seed,
   });
 
-  const baseUrl = getForgeBaseUrl();
-  const seedForForge = forgeSeed(params.seed);
+  const forgeBase = getForgeBaseUrl();
+  const comfyBase = getComfyBaseUrl();
 
   try {
-    const result = await forgeTxt2Img(
-      {
-        model,
-        prompt,
-        negativePrompt,
-        width: params.width,
-        height: params.height,
-        steps: params.steps,
-        cfgScale: params.cfgScale,
-        sampler,
-        seed: seedForForge,
-        signal: request.signal,
-      },
-      baseUrl,
-    );
+    let imageBase64: string;
+    let resultSeed: number | null;
 
-    const imageBytes = Buffer.from(result.imageBase64, "base64");
+    if (providerId === FORGE_PROVIDER_ID) {
+      const result = await forgeTxt2Img(
+        {
+          model,
+          prompt,
+          negativePrompt,
+          width: params.width,
+          height: params.height,
+          steps: params.steps,
+          cfgScale: params.cfgScale,
+          sampler,
+          seed: forgeSeed(params.seed),
+          signal: request.signal,
+        },
+        forgeBase,
+      );
+      imageBase64 = result.imageBase64;
+      resultSeed = result.seed;
+    } else {
+      const seed =
+        params.seed !== null ? params.seed : comfyRandomSeed();
+      const result = await comfyTxt2Img(
+        {
+          model,
+          prompt,
+          negativePrompt,
+          width: params.width,
+          height: params.height,
+          steps: params.steps,
+          cfgScale: params.cfgScale,
+          sampler,
+          seed,
+          signal: request.signal,
+        },
+        comfyBase,
+      );
+      imageBase64 = result.imageBase64;
+      resultSeed = result.seed;
+    }
+
+    const imageBytes = Buffer.from(imageBase64, "base64");
     const storedSeed =
       params.seed !== null
         ? params.seed
-        : result.seed !== null && result.seed >= 0
-          ? result.seed
+        : resultSeed !== null && resultSeed >= 0
+          ? resultSeed
           : null;
 
     const generation = createGeneration(getDatabase(), {
@@ -111,7 +148,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ generation });
   } catch (error) {
     if (request.signal.aborted) {
-      await interruptForge(baseUrl);
+      if (providerId === FORGE_PROVIDER_ID) await interruptForge(forgeBase);
+      else await interruptComfy(comfyBase);
       return NextResponse.json(
         { error: "Generation cancelled." },
         { status: 499 },
@@ -119,8 +157,10 @@ export async function POST(request: Request) {
     }
 
     const message = error instanceof Error ? error.message : String(error);
+    const name =
+      providerId === FORGE_PROVIDER_ID ? "Forge" : "ComfyUI";
     return NextResponse.json(
-      { error: `Forge could not complete the request: ${message}` },
+      { error: `${name} could not complete the request: ${message}` },
       { status: 502 },
     );
   }
