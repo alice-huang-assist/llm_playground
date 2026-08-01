@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import Chat from "@/components/Chat";
@@ -139,7 +140,12 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      <h1 className={styles.title}>LLM Playground</h1>
+      <div className={styles.header}>
+        <h1 className={styles.title}>LLM Playground</h1>
+        <Link className={styles.settingsLink} href="/settings">
+          Settings
+        </Link>
+      </div>
       <p className={styles.subtitle}>
         Models discovered across your local runtimes.
       </p>

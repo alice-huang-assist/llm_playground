@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { buildParameterPayload } from "@/lib/params";
 import type { ParameterKey } from "@/lib/params";
-import { providers } from "@/lib/providers/registry";
+import { getProviders } from "@/lib/providers/registry";
 import type { ChatMessage } from "@/lib/providers/types";
 
 // The reply is generated on demand and streamed; nothing here is cacheable.
@@ -34,7 +34,9 @@ export async function POST(request: Request) {
     return badRequest("Request body must be JSON.");
   }
 
-  const provider = providers.find((entry) => entry.id === body.providerId);
+  const provider = getProviders().find(
+    (entry) => entry.id === body.providerId,
+  );
   if (!provider) {
     return badRequest(`Unknown provider "${String(body.providerId)}".`);
   }

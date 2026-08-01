@@ -5,6 +5,10 @@ export interface OpenAICompatibleProviderOptions {
   name: string;
   /** Root of the OpenAI-compatible API, e.g. `http://localhost:11434/v1`. */
   baseUrl: string;
+  /** Extra headers every request carries, such as an Authorization header. */
+  headers?: Record<string, string>;
+  /** Keeps a model out of the listing when it returns false. */
+  includeModel?: (id: string) => boolean;
 }
 
 interface ModelsPayload {
@@ -91,16 +95,26 @@ export class OpenAICompatibleProvider implements Provider {
   readonly id: string;
   readonly name: string;
   private readonly baseUrl: string;
+  private readonly headers: Record<string, string>;
+  private readonly includeModel: (id: string) => boolean;
 
-  constructor({ id, name, baseUrl }: OpenAICompatibleProviderOptions) {
+  constructor({
+    id,
+    name,
+    baseUrl,
+    headers = {},
+    includeModel = () => true,
+  }: OpenAICompatibleProviderOptions) {
     this.id = id;
     this.name = name;
     this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.headers = headers;
+    this.includeModel = includeModel;
   }
 
   async listModels(): Promise<Model[]> {
     const response = await fetch(`${this.baseUrl}/models`, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...this.headers },
       cache: "no-store",
     });
 
@@ -115,6 +129,7 @@ export class OpenAICompatibleProvider implements Provider {
     return (payload.data ?? [])
       .map((entry) => entry?.id)
       .filter((id): id is string => typeof id === "string" && id.length > 0)
+      .filter((id) => this.includeModel(id))
       .map((id) => ({
         id,
         providerId: this.id,
@@ -128,6 +143,7 @@ export class OpenAICompatibleProvider implements Provider {
       headers: {
         "Content-Type": "application/json",
         Accept: "text/event-stream",
+        ...this.headers,
       },
       body: JSON.stringify({
         model: request.model,

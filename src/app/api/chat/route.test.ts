@@ -41,7 +41,7 @@ const fake = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/providers/registry", () => ({
-  providers: [fake.provider as unknown as Provider],
+  getProviders: () => [fake.provider as unknown as Provider],
 }));
 
 const { POST } = await import("./route");
