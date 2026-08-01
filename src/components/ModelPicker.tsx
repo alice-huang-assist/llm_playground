@@ -10,7 +10,12 @@ function modelKey(model: Model) {
   return `${model.providerId}:${model.id}`;
 }
 
-export default function ModelPicker() {
+export default function ModelPicker({
+  onChange,
+}: {
+  /** Notified whenever the selection changes, so a parent can chat with it. */
+  onChange?: (model: Model | null) => void;
+}) {
   const [providers, setProviders] = useState<ProviderModels[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState("");
@@ -63,7 +68,11 @@ export default function ModelPicker() {
         id="model"
         className={styles.select}
         value={selectedKey}
-        onChange={(event) => setSelectedKey(event.target.value)}
+        onChange={(event) => {
+          const key = event.target.value;
+          setSelectedKey(key);
+          onChange?.(models.find((model) => modelKey(model) === key) ?? null);
+        }}
         disabled={models.length === 0}
       >
         <option value="">

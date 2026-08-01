@@ -19,7 +19,7 @@ function fakeProvider(
       if (result instanceof Error) throw result;
       return result;
     },
-    async chat() {
+    async *chat() {
       throw new Error("not used in this test");
     },
   };
