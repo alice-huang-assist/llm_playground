@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui";
-import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge";
+import ThemeToggle from "@/components/ThemeToggle";
+import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
+import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 
 import styles from "./page.module.css";
 
@@ -167,6 +168,7 @@ export default function SettingsPage() {
           <Link className={styles.back} href="/generate">
             Images
           </Link>
+          <ThemeToggle />
         </nav>
       </div>
 
