@@ -2,9 +2,15 @@ import { NextResponse } from "next/server";
 
 import { getDatabase } from "@/lib/db/client";
 import { createGeneration } from "@/lib/db/generations";
-import { clampImageParams, forgeSeed } from "@/lib/image-params";
+import {
+  clampDenoisingStrength,
+  clampImageParams,
+  forgeSeed,
+  parseReferenceImage,
+} from "@/lib/image-params";
 import {
   COMFYUI_PROVIDER_ID,
+  comfyImg2Img,
   comfyRandomSeed,
   comfyTxt2Img,
   getComfyBaseUrl,
@@ -12,6 +18,7 @@ import {
 } from "@/lib/providers/comfyui";
 import {
   FORGE_PROVIDER_ID,
+  forgeImg2Img,
   forgeTxt2Img,
   getForgeBaseUrl,
   interruptForge,
@@ -35,6 +42,8 @@ export async function POST(request: Request) {
     cfgScale?: unknown;
     seed?: unknown;
     sampler?: unknown;
+    referenceImage?: unknown;
+    denoisingStrength?: unknown;
   };
 
   try {
@@ -76,6 +85,19 @@ export async function POST(request: Request) {
     seed: body.seed,
   });
 
+  const hasReference =
+    body.referenceImage !== undefined &&
+    body.referenceImage !== null &&
+    body.referenceImage !== "";
+
+  let reference: ReturnType<typeof parseReferenceImage> | null = null;
+  let denoisingStrength: number | null = null;
+  if (hasReference) {
+    reference = parseReferenceImage(body.referenceImage);
+    if ("error" in reference) return badRequest(reference.error);
+    denoisingStrength = clampDenoisingStrength(body.denoisingStrength);
+  }
+
   const forgeBase = getForgeBaseUrl();
   const comfyBase = getComfyBaseUrl();
 
@@ -84,43 +106,93 @@ export async function POST(request: Request) {
     let resultSeed: number | null;
 
     if (providerId === FORGE_PROVIDER_ID) {
-      const result = await forgeTxt2Img(
-        {
-          model,
-          prompt,
-          negativePrompt,
-          width: params.width,
-          height: params.height,
-          steps: params.steps,
-          cfgScale: params.cfgScale,
-          sampler,
-          seed: forgeSeed(params.seed),
-          signal: request.signal,
-        },
-        forgeBase,
-      );
-      imageBase64 = result.imageBase64;
-      resultSeed = result.seed;
+      if (reference && !("error" in reference)) {
+        const result = await forgeImg2Img(
+          {
+            model,
+            prompt,
+            negativePrompt,
+            width: params.width,
+            height: params.height,
+            steps: params.steps,
+            cfgScale: params.cfgScale,
+            sampler,
+            seed: forgeSeed(params.seed),
+            initImageBase64: reference.base64,
+            denoisingStrength: denoisingStrength!,
+            signal: request.signal,
+          },
+          forgeBase,
+        );
+        imageBase64 = result.imageBase64;
+        resultSeed = result.seed;
+      } else {
+        const result = await forgeTxt2Img(
+          {
+            model,
+            prompt,
+            negativePrompt,
+            width: params.width,
+            height: params.height,
+            steps: params.steps,
+            cfgScale: params.cfgScale,
+            sampler,
+            seed: forgeSeed(params.seed),
+            signal: request.signal,
+          },
+          forgeBase,
+        );
+        imageBase64 = result.imageBase64;
+        resultSeed = result.seed;
+      }
     } else {
-      const seed =
-        params.seed !== null ? params.seed : comfyRandomSeed();
-      const result = await comfyTxt2Img(
-        {
-          model,
-          prompt,
-          negativePrompt,
-          width: params.width,
-          height: params.height,
-          steps: params.steps,
-          cfgScale: params.cfgScale,
-          sampler,
-          seed,
-          signal: request.signal,
-        },
-        comfyBase,
-      );
-      imageBase64 = result.imageBase64;
-      resultSeed = result.seed;
+      const seed = params.seed !== null ? params.seed : comfyRandomSeed();
+      if (reference && !("error" in reference)) {
+        const ext =
+          reference.kind === "jpeg"
+            ? "jpg"
+            : reference.kind === "webp"
+              ? "webp"
+              : "png";
+        const result = await comfyImg2Img(
+          {
+            model,
+            prompt,
+            negativePrompt,
+            width: params.width,
+            height: params.height,
+            steps: params.steps,
+            cfgScale: params.cfgScale,
+            sampler,
+            seed,
+            imageBytes: reference.bytes,
+            imageFilename: `ref_${Date.now()}.${ext}`,
+            denoisingStrength: denoisingStrength!,
+            signal: request.signal,
+          },
+          comfyBase,
+        );
+        imageBase64 = result.imageBase64;
+        resultSeed = result.seed;
+      } else {
+        const result = await comfyTxt2Img(
+          {
+            model,
+            prompt,
+            negativePrompt,
+            width: params.width,
+            height: params.height,
+            steps: params.steps,
+            cfgScale: params.cfgScale,
+            sampler,
+            seed,
+            signal: request.signal,
+          },
+          comfyBase,
+        );
+        imageBase64 = result.imageBase64;
+        resultSeed = result.seed;
+      }
     }
 
     const imageBytes = Buffer.from(imageBase64, "base64");
@@ -142,6 +214,8 @@ export async function POST(request: Request) {
       seed: storedSeed,
       cfgScale: params.cfgScale,
       sampler,
+      usedReference: hasReference,
+      denoisingStrength,
       imageBytes,
     });
 
@@ -157,8 +231,7 @@ export async function POST(request: Request) {
     }
 
     const message = error instanceof Error ? error.message : String(error);
-    const name =
-      providerId === FORGE_PROVIDER_ID ? "Forge" : "ComfyUI";
+    const name = providerId === FORGE_PROVIDER_ID ? "Forge" : "ComfyUI";
     return NextResponse.json(
       { error: `${name} could not complete the request: ${message}` },
       { status: 502 },

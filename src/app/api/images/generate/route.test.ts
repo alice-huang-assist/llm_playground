@@ -119,4 +119,19 @@ describe("POST /api/images/generate", () => {
     });
     expect(response.status).toBe(400);
   });
+
+  it("rejects a non-image reference", async () => {
+    const response = await post({
+      providerId: FORGE_PROVIDER_ID,
+      model: "sdxl.safetensors",
+      prompt: "hi",
+      sampler: "Euler a",
+      referenceImage: `data:image/png;base64,${Buffer.from("nope").toString("base64")}`,
+      denoisingStrength: 0.5,
+    });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Reference image must be a PNG, JPEG, or WebP file.",
+    });
+  });
 });

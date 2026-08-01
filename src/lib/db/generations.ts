@@ -14,6 +14,8 @@ export interface GenerationSummary {
   seed: number | null;
   cfgScale: number;
   sampler: string;
+  usedReference: boolean;
+  denoisingStrength: number | null;
   createdAt: string;
 }
 
@@ -32,6 +34,8 @@ export interface GenerationInput {
   seed: number | null;
   cfgScale: number;
   sampler: string;
+  usedReference?: boolean;
+  denoisingStrength?: number | null;
   /** Raw PNG (or other image) bytes. */
   imageBytes: Buffer;
 }
@@ -50,6 +54,8 @@ interface GenerationRow {
   sampler: string;
   file_path: string;
   created_at: string;
+  used_reference: number | null;
+  denoising_strength: number | null;
 }
 
 function generationsDir(): string {
@@ -72,6 +78,11 @@ function toSummary(row: GenerationRow): GenerationSummary {
     seed: row.seed === null || row.seed === undefined ? null : Number(row.seed),
     cfgScale: Number(row.cfg_scale),
     sampler: row.sampler,
+    usedReference: Number(row.used_reference ?? 0) === 1,
+    denoisingStrength:
+      row.denoising_strength === null || row.denoising_strength === undefined
+        ? null
+        : Number(row.denoising_strength),
     createdAt: row.created_at,
   };
 }
@@ -80,11 +91,14 @@ function toGeneration(row: GenerationRow): Generation {
   return { ...toSummary(row), filePath: row.file_path };
 }
 
+const SELECT_COLS = `id, provider_id, model_id, prompt, negative_prompt,
+              width, height, steps, seed, cfg_scale, sampler, file_path, created_at,
+              used_reference, denoising_strength`;
+
 export function listGenerations(db: DatabaseSync): GenerationSummary[] {
   const rows = db
     .prepare(
-      `SELECT id, provider_id, model_id, prompt, negative_prompt,
-              width, height, steps, seed, cfg_scale, sampler, file_path, created_at
+      `SELECT ${SELECT_COLS}
        FROM generations
        ORDER BY created_at DESC`,
     )
@@ -98,8 +112,7 @@ export function getGeneration(
 ): Generation | null {
   const row = db
     .prepare(
-      `SELECT id, provider_id, model_id, prompt, negative_prompt,
-              width, height, steps, seed, cfg_scale, sampler, file_path, created_at
+      `SELECT ${SELECT_COLS}
        FROM generations WHERE id = ?`,
     )
     .get(id) as unknown as GenerationRow | undefined;
@@ -117,11 +130,18 @@ export function createGeneration(
   const absolutePath = path.join(dir, `${id}.png`);
   writeFileSync(absolutePath, input.imageBytes);
 
+  const usedReference = input.usedReference === true;
+  const strength =
+    usedReference && input.denoisingStrength !== undefined
+      ? input.denoisingStrength
+      : null;
+
   db.prepare(
     `INSERT INTO generations
        (id, provider_id, model_id, prompt, negative_prompt,
-        width, height, steps, seed, cfg_scale, sampler, file_path, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        width, height, steps, seed, cfg_scale, sampler, file_path, created_at,
+        used_reference, denoising_strength)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.providerId,
@@ -136,6 +156,8 @@ export function createGeneration(
     input.sampler,
     absolutePath,
     now,
+    usedReference ? 1 : 0,
+    strength,
   );
 
   const generation = getGeneration(db, id);
