@@ -16,10 +16,8 @@ export interface ChatMessage {
 export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
-}
-
-export interface ChatResponse {
-  content: string;
+  /** Aborting this cancels the in-flight request to the provider. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -30,7 +28,8 @@ export interface Provider {
   readonly id: string;
   readonly name: string;
   listModels(): Promise<Model[]>;
-  chat(request: ChatRequest): Promise<ChatResponse>;
+  /** Streams the assistant reply as a sequence of content deltas. */
+  chat(request: ChatRequest): AsyncIterable<string>;
 }
 
 /** Per-provider outcome of a model listing, including the unreachable case. */

@@ -1,0 +1,94 @@
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  list-style: none;
+  min-height: 8rem;
+}
+
+.empty {
+  font-size: 0.95rem;
+  opacity: 0.55;
+}
+
+.user,
+.assistant,
+.error {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+}
+
+.user {
+  opacity: 0.9;
+}
+
+.error {
+  border-style: dashed;
+}
+
+.role {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cursor {
+  opacity: 0.6;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.input {
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  resize: vertical;
+}
+
+.input:disabled {
+  opacity: 0.5;
+}
+
+.controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button {
+  padding: 0.45rem 0.9rem;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
