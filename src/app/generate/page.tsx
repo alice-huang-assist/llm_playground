@@ -6,15 +6,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import {
   DEFAULT_DENOISING_STRENGTH,
+  DEFAULT_IMAGE_COUNT,
   DEFAULT_IMAGE_PARAMS,
+  MAX_IMAGE_COUNT,
   MAX_REFERENCE_BYTES,
+  MIN_IMAGE_COUNT,
   clampCfgScale,
   clampDenoisingStrength,
+  clampImageCount,
   clampImageSize,
   clampSeed,
   clampSteps,
   type ImageParamValues,
 } from "@/lib/image-params";
+import { groupGenerations } from "@/lib/generation-history";
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
@@ -54,6 +59,7 @@ interface GenerationSummary {
   sampler: string;
   usedReference: boolean;
   denoisingStrength: number | null;
+  batchId: string | null;
   createdAt: string;
 }
 
@@ -64,7 +70,7 @@ const PROVIDERS = [
 
 type GenerateStreamEvent =
   | { type: "progress"; percent?: number; currentImage?: string }
-  | { type: "done"; generation?: GenerationSummary }
+  | { type: "done"; generations?: GenerationSummary[] }
   | { type: "error"; message?: string };
 
 function snippet(prompt: string): string {
@@ -93,13 +99,18 @@ export default function GeneratePage() {
   const [denoisingStrength, setDenoisingStrength] = useState(
     DEFAULT_DENOISING_STRENGTH,
   );
+  const [imageCount, setImageCount] = useState(DEFAULT_IMAGE_COUNT);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [previewIds, setPreviewIds] = useState<string[]>([]);
   const [history, setHistory] = useState<GenerationSummary[]>([]);
+  const [expandedBatches, setExpandedBatches] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [progressPercent, setProgressPercent] = useState<number | null>(null);
   const [livePreviewUrl, setLivePreviewUrl] = useState<string | null>(null);
 
@@ -110,13 +121,67 @@ export default function GeneratePage() {
     setLivePreviewUrl(null);
   }
 
+  function showGenerations(items: GenerationSummary[]) {
+    if (items.length === 0) return;
+    setPreviewIds(items.map((item) => item.id));
+    applyGeneration(items[0]!, items);
+  }
+
+  function applyGeneration(
+    generation: GenerationSummary,
+    batchItems?: GenerationSummary[],
+  ) {
+    setActiveId(generation.id);
+    if (batchItems && batchItems.length > 0) {
+      setPreviewIds(batchItems.map((item) => item.id));
+    } else if (generation.batchId) {
+      const siblings = history
+        .filter((item) => item.batchId === generation.batchId)
+        .slice()
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      setPreviewIds(
+        siblings.length > 0
+          ? siblings.map((item) => item.id)
+          : [generation.id],
+      );
+    } else {
+      setPreviewIds([generation.id]);
+    }
+    setProviderId(generation.providerId);
+    setModelId(generation.modelId);
+    setPrompt(generation.prompt);
+    setNegativePrompt(generation.negativePrompt);
+    setParams({
+      width: generation.width,
+      height: generation.height,
+      steps: generation.steps,
+      cfgScale: generation.cfgScale,
+      seed: generation.seed,
+    });
+    setSeedInput(generation.seed === null ? "" : String(generation.seed));
+    setSampler(generation.sampler);
+    // Reference bytes are not re-hydrated from history (AC-6); restore strength flag only.
+    setReferenceDataUrl(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setDenoisingStrength(
+      generation.denoisingStrength ?? DEFAULT_DENOISING_STRENGTH,
+    );
+    setError(null);
+    setStatus(
+      generation.usedReference
+        ? "Restored params (re-attach a reference to run img2img again)."
+        : null,
+    );
+  }
+
   const refreshHistory = useCallback(async () => {
     const response = await fetch("/api/images/generations");
-    if (!response.ok) return;
+    if (!response.ok) return [] as GenerationSummary[];
     const payload = (await response.json()) as {
       generations: GenerationSummary[];
     };
     setHistory(payload.generations);
+    return payload.generations;
   }, []);
 
   useEffect(() => {
@@ -245,35 +310,6 @@ export default function GeneratePage() {
     }
   }, [providerId]);
 
-  function applyGeneration(generation: GenerationSummary) {
-    setActiveId(generation.id);
-    setProviderId(generation.providerId);
-    setModelId(generation.modelId);
-    setPrompt(generation.prompt);
-    setNegativePrompt(generation.negativePrompt);
-    setParams({
-      width: generation.width,
-      height: generation.height,
-      steps: generation.steps,
-      cfgScale: generation.cfgScale,
-      seed: generation.seed,
-    });
-    setSeedInput(generation.seed === null ? "" : String(generation.seed));
-    setSampler(generation.sampler);
-    // Reference bytes are not re-hydrated from history (AC-6); restore strength flag only.
-    setReferenceDataUrl(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    setDenoisingStrength(
-      generation.denoisingStrength ?? DEFAULT_DENOISING_STRENGTH,
-    );
-    setError(null);
-    setStatus(
-      generation.usedReference
-        ? "Restored params (re-attach a reference to run img2img again)."
-        : null,
-    );
-  }
-
   function clearReference() {
     setReferenceDataUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -336,6 +372,7 @@ export default function GeneratePage() {
           cfgScale: params.cfgScale,
           seed: seedInput.trim() === "" ? null : Number(seedInput),
           sampler,
+          count: imageCount,
           ...(referenceDataUrl
             ? {
                 referenceImage: referenceDataUrl,
@@ -365,7 +402,7 @@ export default function GeneratePage() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let finished = false;
+      let finished: GenerationSummary[] | null = null;
 
       const handle = (line: string) => {
         if (line.trim() === "") return;
@@ -381,10 +418,14 @@ export default function GeneratePage() {
           setError(event.message ?? "Generate failed.");
           setStatus(null);
           clearProgressUi();
-        } else if (event.type === "done" && event.generation) {
-          finished = true;
+        } else if (
+          event.type === "done" &&
+          Array.isArray(event.generations) &&
+          event.generations.length > 0
+        ) {
+          finished = event.generations;
           clearProgressUi();
-          applyGeneration(event.generation);
+          showGenerations(event.generations);
           setStatus("Done.");
         }
       };
@@ -402,14 +443,26 @@ export default function GeneratePage() {
       }
       handle(buffer);
 
+      await refreshHistory();
       if (finished) {
-        await refreshHistory();
+        showGenerations(finished);
       }
     } catch (caught: unknown) {
       if (controller.signal.aborted) {
         setStatus(null);
         setError(null);
         clearProgressUi();
+        const latest = await refreshHistory();
+        const newest = latest[0];
+        if (newest?.batchId) {
+          const batch = latest
+            .filter((item) => item.batchId === newest.batchId)
+            .slice()
+            .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          showGenerations(batch);
+        } else if (newest) {
+          showGenerations([newest]);
+        }
         return;
       }
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -421,7 +474,7 @@ export default function GeneratePage() {
     }
   }
 
-  function stop() {
+  async function stop() {
     abortRef.current?.abort();
     setStatus("Cancelling…");
     clearProgressUi();
@@ -429,8 +482,38 @@ export default function GeneratePage() {
 
   async function remove(id: string) {
     await fetch(`/api/images/generations/${id}`, { method: "DELETE" });
-    if (activeId === id) setActiveId(null);
+    setPreviewIds((current) => current.filter((entry) => entry !== id));
+    if (activeId === id) {
+      setActiveId(null);
+    }
     await refreshHistory();
+  }
+
+  async function removeBatch(batchId: string) {
+    await fetch(`/api/images/generations/batch/${encodeURIComponent(batchId)}`, {
+      method: "DELETE",
+    });
+    setExpandedBatches((current) => {
+      const next = new Set(current);
+      next.delete(batchId);
+      return next;
+    });
+    const removed = history.filter((item) => item.batchId === batchId);
+    const removedIds = new Set(removed.map((item) => item.id));
+    setPreviewIds((current) => current.filter((id) => !removedIds.has(id)));
+    if (activeId && removedIds.has(activeId)) {
+      setActiveId(null);
+    }
+    await refreshHistory();
+  }
+
+  function toggleBatch(batchId: string) {
+    setExpandedBatches((current) => {
+      const next = new Set(current);
+      if (next.has(batchId)) next.delete(batchId);
+      else next.add(batchId);
+      return next;
+    });
   }
 
   function download(id: string) {
@@ -439,6 +522,10 @@ export default function GeneratePage() {
     anchor.download = `${id}.png`;
     anchor.click();
   }
+
+  const historyGroups = groupGenerations(history);
+  const gridIds =
+    !busy && !livePreviewUrl && previewIds.length > 1 ? previewIds : null;
 
   const canGenerate =
     !busy &&
@@ -665,6 +752,20 @@ export default function GeneratePage() {
               />
             </label>
             <label className={styles.field}>
+              <span className={styles.label}>Images (1–8)</span>
+              <input
+                className={styles.input}
+                type="number"
+                min={MIN_IMAGE_COUNT}
+                max={MAX_IMAGE_COUNT}
+                value={imageCount}
+                disabled={busy}
+                onChange={(event) =>
+                  setImageCount(clampImageCount(event.target.value, imageCount))
+                }
+              />
+            </label>
+            <label className={styles.field}>
               <span className={styles.label}>Sampler</span>
               <select
                 className={styles.select}
@@ -735,14 +836,44 @@ export default function GeneratePage() {
           {error && <p className={styles.error}>{error}</p>}
 
           <div className={styles.preview}>
-            {livePreviewUrl || activeId ? (
+            {livePreviewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 className={styles.image}
-                src={
-                  livePreviewUrl ??
-                  `/api/images/generations/${activeId}/file`
-                }
+                src={livePreviewUrl}
+                alt={prompt || "Generating preview"}
+              />
+            ) : gridIds ? (
+              <div className={styles.previewGrid}>
+                {gridIds.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={
+                      id === activeId
+                        ? styles.previewGridItemActive
+                        : styles.previewGridItem
+                    }
+                    onClick={() => {
+                      const item = history.find((entry) => entry.id === id);
+                      if (item) applyGeneration(item);
+                      else setActiveId(id);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className={styles.previewGridImage}
+                      src={`/api/images/generations/${id}/file`}
+                      alt=""
+                    />
+                  </button>
+                ))}
+              </div>
+            ) : activeId ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                className={styles.image}
+                src={`/api/images/generations/${activeId}/file`}
                 alt={prompt || "Generated image"}
               />
             ) : (
@@ -777,46 +908,142 @@ export default function GeneratePage() {
             <p className={styles.placeholder}>No generations yet.</p>
           ) : (
             <ul className={styles.history}>
-              {history.map((item) => (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={
-                      item.id === activeId
-                        ? styles.historyItemActive
-                        : styles.historyItem
-                    }
-                    onClick={() => applyGeneration(item)}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      className={styles.thumb}
-                      src={`/api/images/generations/${item.id}/file`}
-                      alt=""
-                    />
-                    <span className={styles.historyText}>
-                      {item.usedReference ? "img2img · " : ""}
-                      {snippet(item.prompt)}
-                    </span>
-                  </button>
-                  <div className={styles.historyActions}>
+              {historyGroups.map((group) =>
+                group.kind === "single" ? (
+                  <li key={group.item.id}>
                     <button
                       type="button"
-                      className={styles.smallButton}
-                      onClick={() => download(item.id)}
+                      className={
+                        group.item.id === activeId
+                          ? styles.historyItemActive
+                          : styles.historyItem
+                      }
+                      onClick={() => applyGeneration(group.item)}
                     >
-                      Download
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className={styles.thumb}
+                        src={`/api/images/generations/${group.item.id}/file`}
+                        alt=""
+                      />
+                      <span className={styles.historyText}>
+                        {group.item.usedReference ? "img2img · " : ""}
+                        {snippet(group.item.prompt)}
+                      </span>
                     </button>
+                    <div className={styles.historyActions}>
+                      <button
+                        type="button"
+                        className={styles.smallButton}
+                        onClick={() => download(group.item.id)}
+                      >
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.danger}
+                        onClick={() => void remove(group.item.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ) : (
+                  <li key={group.batchId} className={styles.batchBlock}>
                     <button
                       type="button"
-                      className={styles.danger}
-                      onClick={() => void remove(item.id)}
+                      className={
+                        group.items.some((item) => item.id === activeId)
+                          ? styles.historyItemActive
+                          : styles.historyItem
+                      }
+                      onClick={() => {
+                        toggleBatch(group.batchId);
+                        applyGeneration(group.items[0]!, group.items);
+                      }}
                     >
-                      Delete
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className={styles.thumb}
+                        src={`/api/images/generations/${group.items[0]!.id}/file`}
+                        alt=""
+                      />
+                      <span className={styles.historyText}>
+                        {group.items[0]!.usedReference ? "img2img · " : ""}
+                        {snippet(group.items[0]!.prompt)}
+                        <span className={styles.batchCount}>
+                          {" "}
+                          · {group.items.length} images
+                        </span>
+                      </span>
                     </button>
-                  </div>
-                </li>
-              ))}
+                    <div className={styles.historyActions}>
+                      <button
+                        type="button"
+                        className={styles.smallButton}
+                        onClick={() => toggleBatch(group.batchId)}
+                      >
+                        {expandedBatches.has(group.batchId)
+                          ? "Collapse"
+                          : "Expand"}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.danger}
+                        onClick={() => void removeBatch(group.batchId)}
+                      >
+                        Delete all
+                      </button>
+                    </div>
+                    {expandedBatches.has(group.batchId) && (
+                      <ul className={styles.batchChildren}>
+                        {group.items.map((item) => (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              className={
+                                item.id === activeId
+                                  ? styles.historyItemActive
+                                  : styles.historyItem
+                              }
+                              onClick={() =>
+                                applyGeneration(item, group.items)
+                              }
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                className={styles.thumb}
+                                src={`/api/images/generations/${item.id}/file`}
+                                alt=""
+                              />
+                              <span className={styles.historyText}>
+                                seed{" "}
+                                {item.seed === null ? "—" : String(item.seed)}
+                              </span>
+                            </button>
+                            <div className={styles.historyActions}>
+                              <button
+                                type="button"
+                                className={styles.smallButton}
+                                onClick={() => download(item.id)}
+                              >
+                                Download
+                              </button>
+                              <button
+                                type="button"
+                                className={styles.danger}
+                                onClick={() => void remove(item.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </aside>

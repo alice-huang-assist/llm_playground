@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 
 import { getDatabase } from "@/lib/db/client";
-import { createGeneration, type GenerationSummary } from "@/lib/db/generations";
+import {
+  createGeneration,
+  type GenerationSummary,
+} from "@/lib/db/generations";
 import {
   clampDenoisingStrength,
+  clampImageCount,
   clampImageParams,
-  forgeSeed,
+  overallProgressPercent,
   parseReferenceImage,
+  resolveBaseSeed,
+  seedForIndex,
 } from "@/lib/image-params";
 import {
   COMFYUI_PROVIDER_ID,
   comfyImg2Img,
-  comfyRandomSeed,
   comfyTxt2Img,
   getComfyBaseUrl,
   interruptComfy,
@@ -37,8 +42,44 @@ type GenerateEvent =
       percent: number;
       currentImage?: string;
     }
-  | { type: "done"; generation: GenerationSummary }
+  | { type: "done"; generations: GenerationSummary[] }
   | { type: "error"; message: string };
+
+function toSummary(generation: {
+  id: string;
+  providerId: string;
+  modelId: string;
+  prompt: string;
+  negativePrompt: string;
+  width: number;
+  height: number;
+  steps: number;
+  seed: number | null;
+  cfgScale: number;
+  sampler: string;
+  usedReference: boolean;
+  denoisingStrength: number | null;
+  batchId: string | null;
+  createdAt: string;
+}): GenerationSummary {
+  return {
+    id: generation.id,
+    providerId: generation.providerId,
+    modelId: generation.modelId,
+    prompt: generation.prompt,
+    negativePrompt: generation.negativePrompt,
+    width: generation.width,
+    height: generation.height,
+    steps: generation.steps,
+    seed: generation.seed,
+    cfgScale: generation.cfgScale,
+    sampler: generation.sampler,
+    usedReference: generation.usedReference,
+    denoisingStrength: generation.denoisingStrength,
+    batchId: generation.batchId,
+    createdAt: generation.createdAt,
+  };
+}
 
 export async function POST(request: Request) {
   let body: {
@@ -52,6 +93,7 @@ export async function POST(request: Request) {
     cfgScale?: unknown;
     seed?: unknown;
     sampler?: unknown;
+    count?: unknown;
     referenceImage?: unknown;
     denoisingStrength?: unknown;
   };
@@ -94,6 +136,7 @@ export async function POST(request: Request) {
     cfgScale: body.cfgScale,
     seed: body.seed,
   });
+  const count = clampImageCount(body.count);
 
   const hasReference =
     body.referenceImage !== undefined &&
@@ -110,6 +153,8 @@ export async function POST(request: Request) {
 
   const forgeBase = getForgeBaseUrl();
   const comfyBase = getComfyBaseUrl();
+  const baseSeed = resolveBaseSeed(params.seed);
+  const batchId = count > 1 ? crypto.randomUUID() : null;
 
   const encoder = new TextEncoder();
   const send = (event: GenerateEvent) =>
@@ -125,10 +170,19 @@ export async function POST(request: Request) {
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const onProgress = (progress: ImageGenerationProgress) => {
+      const finished: GenerationSummary[] = [];
+
+      const emitProgress = (
+        imageIndex: number,
+        progress: ImageGenerationProgress,
+      ) => {
         const event: GenerateEvent = {
           type: "progress",
-          percent: progress.percent,
+          percent: overallProgressPercent(
+            imageIndex,
+            count,
+            progress.percent,
+          ),
           ...(progress.currentImageBase64
             ? { currentImage: progress.currentImageBase64 }
             : {}),
@@ -141,147 +195,189 @@ export async function POST(request: Request) {
       };
 
       try {
-        let imageBase64: string;
-        let resultSeed: number | null;
+        for (let index = 0; index < count; index += 1) {
+          if (request.signal.aborted) {
+            await interrupt();
+            break;
+          }
 
-        if (providerId === FORGE_PROVIDER_ID) {
-          if (reference && !("error" in reference)) {
-            const result = await forgeImg2Img(
-              {
-                model,
-                prompt,
-                negativePrompt,
-                width: params.width,
-                height: params.height,
-                steps: params.steps,
-                cfgScale: params.cfgScale,
-                sampler,
-                seed: forgeSeed(params.seed),
-                initImageBase64: reference.base64,
-                denoisingStrength: denoisingStrength!,
-                signal: request.signal,
-                onProgress,
-              },
-              forgeBase,
-            );
-            imageBase64 = result.imageBase64;
-            resultSeed = result.seed;
-          } else {
-            const result = await forgeTxt2Img(
-              {
-                model,
-                prompt,
-                negativePrompt,
-                width: params.width,
-                height: params.height,
-                steps: params.steps,
-                cfgScale: params.cfgScale,
-                sampler,
-                seed: forgeSeed(params.seed),
-                signal: request.signal,
-                onProgress,
-              },
-              forgeBase,
-            );
-            imageBase64 = result.imageBase64;
-            resultSeed = result.seed;
+          const seed = seedForIndex(baseSeed, index);
+          const onProgress = (progress: ImageGenerationProgress) =>
+            emitProgress(index, progress);
+
+          let imageBase64: string;
+          let resultSeed: number | null = seed;
+
+          try {
+            if (providerId === FORGE_PROVIDER_ID) {
+              if (reference && !("error" in reference)) {
+                const result = await forgeImg2Img(
+                  {
+                    model,
+                    prompt,
+                    negativePrompt,
+                    width: params.width,
+                    height: params.height,
+                    steps: params.steps,
+                    cfgScale: params.cfgScale,
+                    sampler,
+                    seed,
+                    initImageBase64: reference.base64,
+                    denoisingStrength: denoisingStrength!,
+                    signal: request.signal,
+                    onProgress,
+                  },
+                  forgeBase,
+                );
+                imageBase64 = result.imageBase64;
+                resultSeed = result.seed ?? seed;
+              } else {
+                const result = await forgeTxt2Img(
+                  {
+                    model,
+                    prompt,
+                    negativePrompt,
+                    width: params.width,
+                    height: params.height,
+                    steps: params.steps,
+                    cfgScale: params.cfgScale,
+                    sampler,
+                    seed,
+                    signal: request.signal,
+                    onProgress,
+                  },
+                  forgeBase,
+                );
+                imageBase64 = result.imageBase64;
+                resultSeed = result.seed ?? seed;
+              }
+            } else if (reference && !("error" in reference)) {
+              const ext =
+                reference.kind === "jpeg"
+                  ? "jpg"
+                  : reference.kind === "webp"
+                    ? "webp"
+                    : "png";
+              const result = await comfyImg2Img(
+                {
+                  model,
+                  prompt,
+                  negativePrompt,
+                  width: params.width,
+                  height: params.height,
+                  steps: params.steps,
+                  cfgScale: params.cfgScale,
+                  sampler,
+                  seed,
+                  imageBytes: reference.bytes,
+                  imageFilename: `ref_${Date.now()}_${index}.${ext}`,
+                  denoisingStrength: denoisingStrength!,
+                  signal: request.signal,
+                  onProgress,
+                },
+                comfyBase,
+              );
+              imageBase64 = result.imageBase64;
+              resultSeed = result.seed;
+            } else {
+              const result = await comfyTxt2Img(
+                {
+                  model,
+                  prompt,
+                  negativePrompt,
+                  width: params.width,
+                  height: params.height,
+                  steps: params.steps,
+                  cfgScale: params.cfgScale,
+                  sampler,
+                  seed,
+                  signal: request.signal,
+                  onProgress,
+                },
+                comfyBase,
+              );
+              imageBase64 = result.imageBase64;
+              resultSeed = result.seed;
+            }
+          } catch (error) {
+            if (request.signal.aborted) {
+              await interrupt();
+              break;
+            }
+            throw error;
           }
-        } else {
-          const seed = params.seed !== null ? params.seed : comfyRandomSeed();
-          if (reference && !("error" in reference)) {
-            const ext =
-              reference.kind === "jpeg"
-                ? "jpg"
-                : reference.kind === "webp"
-                  ? "webp"
-                  : "png";
-            const result = await comfyImg2Img(
-              {
-                model,
-                prompt,
-                negativePrompt,
-                width: params.width,
-                height: params.height,
-                steps: params.steps,
-                cfgScale: params.cfgScale,
-                sampler,
-                seed,
-                imageBytes: reference.bytes,
-                imageFilename: `ref_${Date.now()}.${ext}`,
-                denoisingStrength: denoisingStrength!,
-                signal: request.signal,
-                onProgress,
-              },
-              comfyBase,
-            );
-            imageBase64 = result.imageBase64;
-            resultSeed = result.seed;
-          } else {
-            const result = await comfyTxt2Img(
-              {
-                model,
-                prompt,
-                negativePrompt,
-                width: params.width,
-                height: params.height,
-                steps: params.steps,
-                cfgScale: params.cfgScale,
-                sampler,
-                seed,
-                signal: request.signal,
-                onProgress,
-              },
-              comfyBase,
-            );
-            imageBase64 = result.imageBase64;
-            resultSeed = result.seed;
+
+          if (request.signal.aborted) {
+            await interrupt();
+            break;
           }
+
+          const storedSeed =
+            resultSeed !== null && resultSeed >= 0 ? resultSeed : seed;
+
+          const generation = createGeneration(getDatabase(), {
+            providerId,
+            modelId: model,
+            prompt,
+            negativePrompt,
+            width: params.width,
+            height: params.height,
+            steps: params.steps,
+            seed: storedSeed,
+            cfgScale: params.cfgScale,
+            sampler,
+            usedReference: hasReference,
+            denoisingStrength,
+            batchId,
+            imageBytes: Buffer.from(imageBase64, "base64"),
+          });
+          finished.push(toSummary(generation));
         }
 
-        if (request.signal.aborted) {
-          await interrupt();
-          return;
+        if (finished.length > 0) {
+          try {
+            controller.enqueue(send({ type: "done", generations: finished }));
+          } catch {
+            /* client may have already disconnected after Stop */
+          }
+        } else if (!request.signal.aborted) {
+          controller.enqueue(
+            send({
+              type: "error",
+              message: "No images were generated.",
+            }),
+          );
         }
-
-        const imageBytes = Buffer.from(imageBase64, "base64");
-        const storedSeed =
-          params.seed !== null
-            ? params.seed
-            : resultSeed !== null && resultSeed >= 0
-              ? resultSeed
-              : null;
-
-        const generation = createGeneration(getDatabase(), {
-          providerId,
-          modelId: model,
-          prompt,
-          negativePrompt,
-          width: params.width,
-          height: params.height,
-          steps: params.steps,
-          seed: storedSeed,
-          cfgScale: params.cfgScale,
-          sampler,
-          usedReference: hasReference,
-          denoisingStrength,
-          imageBytes,
-        });
-
-        controller.enqueue(send({ type: "done", generation }));
       } catch (error) {
         if (request.signal.aborted) {
           await interrupt();
-          return;
+          if (finished.length > 0) {
+            try {
+              controller.enqueue(
+                send({ type: "done", generations: finished }),
+              );
+            } catch {
+              /* disconnected */
+            }
+          }
+        } else if (finished.length > 0) {
+          // Partial success then a later failure: return what we have.
+          try {
+            controller.enqueue(send({ type: "done", generations: finished }));
+          } catch {
+            /* disconnected */
+          }
+        } else {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          const name = providerId === FORGE_PROVIDER_ID ? "Forge" : "ComfyUI";
+          controller.enqueue(
+            send({
+              type: "error",
+              message: `${name} could not complete the request: ${message}`,
+            }),
+          );
         }
-
-        const message = error instanceof Error ? error.message : String(error);
-        const name = providerId === FORGE_PROVIDER_ID ? "Forge" : "ComfyUI";
-        controller.enqueue(
-          send({
-            type: "error",
-            message: `${name} could not complete the request: ${message}`,
-          }),
-        );
       } finally {
         controller.close();
       }
