@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import ThemeToggle from "@/components/ThemeToggle";
 import {
   DEFAULT_DENOISING_STRENGTH,
   DEFAULT_IMAGE_PARAMS,
@@ -17,11 +18,11 @@ import {
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
-} from "@/lib/providers/comfyui";
+} from "@/lib/providers/comfyui-shared";
 import {
   FORGE_PROVIDER_ID,
   FORGE_PROVIDER_NAME,
-} from "@/lib/providers/forge";
+} from "@/lib/providers/forge-shared";
 
 import styles from "./page.module.css";
 
@@ -397,6 +398,7 @@ export default function GeneratePage() {
           <Link className={styles.navLink} href="/settings">
             Settings
           </Link>
+          <ThemeToggle />
         </nav>
       </div>
       <p className={styles.subtitle}>

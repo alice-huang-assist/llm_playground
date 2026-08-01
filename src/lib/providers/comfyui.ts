@@ -6,10 +6,17 @@
 import { getDatabase } from "@/lib/db/client";
 import { getSetting } from "@/lib/db/settings";
 
-export const COMFYUI_PROVIDER_ID = "comfyui";
-export const COMFYUI_PROVIDER_NAME = "ComfyUI";
-export const COMFYUI_BASE_URL_KEY = "comfyui_base_url";
-export const DEFAULT_COMFYUI_BASE_URL = "http://127.0.0.1:8188";
+import {
+  COMFYUI_BASE_URL_KEY,
+  DEFAULT_COMFYUI_BASE_URL,
+} from "./comfyui-shared";
+
+export {
+  COMFYUI_BASE_URL_KEY,
+  COMFYUI_PROVIDER_ID,
+  COMFYUI_PROVIDER_NAME,
+  DEFAULT_COMFYUI_BASE_URL,
+} from "./comfyui-shared";
 
 export interface ComfyModel {
   id: string;

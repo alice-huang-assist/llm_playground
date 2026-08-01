@@ -8,6 +8,7 @@ import ModelInstaller from "@/components/ModelInstaller";
 import ModelPicker from "@/components/ModelPicker";
 import ParameterSidebar from "@/components/ParameterSidebar";
 import SessionSidebar from "@/components/SessionSidebar";
+import ThemeToggle from "@/components/ThemeToggle";
 import type { Session, SessionMessage, SessionSummary } from "@/lib/db/sessions";
 import { DEFAULT_PARAMETERS, type ParameterValues } from "@/lib/params";
 import { OLLAMA_PROVIDER_ID } from "@/lib/providers/ollama";
@@ -149,6 +150,7 @@ export default function Home() {
           <Link className={styles.navLink} href="/settings">
             Settings
           </Link>
+          <ThemeToggle />
         </nav>
       </div>
       <p className={styles.subtitle}>

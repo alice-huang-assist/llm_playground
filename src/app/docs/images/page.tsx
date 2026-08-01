@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import ThemeToggle from "@/components/ThemeToggle";
+
 import styles from "./page.module.css";
 
 export default function ImagesDocsPage() {
@@ -17,6 +19,7 @@ export default function ImagesDocsPage() {
           <Link className={styles.link} href="/">
             Chat
           </Link>
+          <ThemeToggle />
         </nav>
       </div>
 
