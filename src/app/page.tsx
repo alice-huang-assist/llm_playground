@@ -1,23 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
+import { useShellSlots } from "@/components/AppShell";
 import Chat from "@/components/Chat";
-import ModelInstaller from "@/components/ModelInstaller";
 import ModelPicker from "@/components/ModelPicker";
 import ParameterSidebar from "@/components/ParameterSidebar";
 import SessionSidebar from "@/components/SessionSidebar";
 import type { Session, SessionMessage, SessionSummary } from "@/lib/db/sessions";
 import { DEFAULT_PARAMETERS, type ParameterValues } from "@/lib/params";
-import { OLLAMA_PROVIDER_ID } from "@/lib/providers/ollama";
-import type { Model, ProviderModels } from "@/lib/providers/types";
-
-import styles from "./page.module.css";
+import type { Model } from "@/lib/providers/types";
 
 export default function Home() {
   const [model, setModel] = useState<Model | null>(null);
-  const [reloadToken, setReloadToken] = useState(0);
-  const [ollamaReachable, setOllamaReachable] = useState(false);
 
   // Parameters stay session-independent on purpose (ALI-9 NG-1).
   const [parameters, setParameters] = useState<ParameterValues>({
@@ -26,6 +22,8 @@ export default function Home() {
 
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [active, setActive] = useState<Session | null>(null);
+
+  const { contextualEl, inspectorEl } = useShellSlots();
 
   const refreshSessions = useCallback(async () => {
     const response = await fetch("/api/sessions");
@@ -82,15 +80,6 @@ export default function Home() {
     };
   }, [openSession, startSession]);
 
-  const handleLoad = useCallback((providers: ProviderModels[]) => {
-    setOllamaReachable(
-      providers.some(
-        (provider) =>
-          provider.providerId === OLLAMA_PROVIDER_ID && provider.reachable,
-      ),
-    );
-  }, []);
-
   const patchSession = useCallback(
     async (id: string, body: Record<string, unknown>) => {
       const response = await fetch(`/api/sessions/${id}`, {
@@ -138,38 +127,28 @@ export default function Home() {
   const modelKey = model ? `${model.providerId}:${model.id}` : "";
 
   return (
-    <div className={styles.main}>
-      <p className={styles.subtitle}>
-        Models discovered across your local runtimes.
-      </p>
-
-      <div className={styles.layout}>
-        <div className={styles.column}>
-          <ModelPicker
-            reloadToken={reloadToken}
-            value={modelKey}
-            onChange={handleModelChange}
-            onLoad={handleLoad}
-          />
-          <ModelInstaller
-            available={ollamaReachable}
-            onInstalled={() => setReloadToken((token) => token + 1)}
-          />
-          {active && (
-            <Chat
-              key={active.id}
-              model={model}
-              parameters={parameters}
-              initialSystemPrompt={
-                active.systemPrompt === "" ? undefined : active.systemPrompt
-              }
-              initialMessages={active.messages}
-              onPersist={handlePersist}
-            />
-          )}
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b border-border bg-surface px-6 py-3">
+        <div className="mx-auto w-full max-w-3xl">
+          <ModelPicker value={modelKey} onChange={handleModelChange} />
         </div>
+      </header>
 
-        <div className={styles.rail}>
+      {active && (
+        <Chat
+          key={active.id}
+          model={model}
+          parameters={parameters}
+          initialSystemPrompt={
+            active.systemPrompt === "" ? undefined : active.systemPrompt
+          }
+          initialMessages={active.messages}
+          onPersist={handlePersist}
+        />
+      )}
+
+      {contextualEl &&
+        createPortal(
           <SessionSidebar
             sessions={sessions}
             activeId={active?.id ?? null}
@@ -177,10 +156,15 @@ export default function Home() {
             onNew={() => void startSession()}
             onRename={(id, name) => void patchSession(id, { name })}
             onDelete={(id) => void handleDelete(id)}
-          />
-          <ParameterSidebar values={parameters} onChange={setParameters} />
-        </div>
-      </div>
+          />,
+          contextualEl,
+        )}
+
+      {inspectorEl &&
+        createPortal(
+          <ParameterSidebar values={parameters} onChange={setParameters} />,
+          inspectorEl,
+        )}
     </div>
   );
 }
