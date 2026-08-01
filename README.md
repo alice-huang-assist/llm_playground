@@ -1,12 +1,11 @@
 # LLM Playground
 
-A local-first, OpenAI-playground-style web app for testing open-weight LLMs with full
-parameter control.
+A local-first, OpenAI-playground-style web app for testing open-weight LLMs and
+local image models with full parameter control.
 
 The app is specified as a chain of Linear issues in the
 [LLM Playground](https://linear.app/aliceassist/project/llm-playground-d0b0acff5b9a)
-project on team `ALI`. So far it discovers models across local runtimes and lets one be
-selected — chat itself is not built yet.
+project on team `ALI`.
 
 ## Getting started
 
@@ -18,7 +17,7 @@ npm run dev     # http://localhost:3000
 `npm run lint`, `npm run typecheck`, and `npm test` are the checks CI runs on every pull
 request.
 
-## Planned scope
+## Chat
 
 - **Providers:** Ollama (`:11434`), LM Studio (`:1234`), and OpenRouter — all
   OpenAI-compatible, behind a single adapter
@@ -28,6 +27,40 @@ request.
 - **Persistence:** SQLite, named revisitable sessions
 - **Model install:** type an Ollama model name, pull it with streaming progress
 - **No auth** — single user, localhost
+
+## Images playground
+
+Sibling feature at `/generate` (nav: **Images**). Talks to a local **Forge** /
+A1111-compatible server over `/sdapi/v1` from the Next.js API only — the browser
+never calls Forge directly.
+
+In-app copy of this guide: [`/docs/images`](http://localhost:3000/docs/images).
+
+### Setup (Forge)
+
+1. Install and run [Stable Diffusion WebUI Forge](https://github.com/lllyasviel/stable-diffusion-webui-forge)
+   (or another A1111-compatible server that exposes `/sdapi/v1`).
+2. Start it with the API enabled (default `http://127.0.0.1:7860`). Confirm
+   `/sdapi/v1/sd-models` responds.
+3. Put at least one open-weight checkpoint in Forge’s models folder so it shows
+   up in the picker.
+4. In the app, open **Settings** and set the Forge base URL if needed (default
+   `http://127.0.0.1:7860`).
+
+ComfyUI and img2img are follow-ups — not in this release.
+
+### How to use
+
+1. Open **Images** from the chat header (or go to `/generate`).
+2. Choose provider **Forge** and a checkpoint.
+3. Enter a prompt (optional negative prompt). Adjust width, height, steps, CFG,
+   sampler, and seed (empty seed = random).
+4. Click **Generate**. **Stop** cancels the run; cancelled runs are not saved.
+5. History (right rail) stores successful generations on disk under
+   `data/generations/` plus SQLite metadata. Click an item to restore the form;
+   **Download** / **Delete** act on that entry.
+6. If Forge is unreachable, the page still loads with empty models and a message
+   linking to Settings and these docs; chat keeps working.
 
 ## Explicitly out of scope
 
@@ -52,6 +85,7 @@ Issues are chained with Linear blocking relations, so they cannot be built out o
 | ALI-9 | Persist named sessions in SQLite | ALI-6 |
 | ALI-10 | OpenRouter provider + settings screen | ALI-5, ALI-9 |
 | ALI-7 | Install Ollama models from the UI | ALI-5 |
+| ALI-11 | Forge text-to-image on `/generate` with history | ALI-10 |
 
 ## Workflow
 

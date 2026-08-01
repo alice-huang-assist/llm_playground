@@ -50,6 +50,28 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 3,
+    up: `
+      CREATE TABLE generations (
+        id TEXT PRIMARY KEY,
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        negative_prompt TEXT NOT NULL DEFAULT '',
+        width INTEGER NOT NULL,
+        height INTEGER NOT NULL,
+        steps INTEGER NOT NULL,
+        seed INTEGER,
+        cfg_scale REAL NOT NULL,
+        sampler TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX generations_created_at ON generations (created_at DESC);
+    `,
+  },
 ];
 
 export const LATEST_VERSION = MIGRATIONS.reduce(

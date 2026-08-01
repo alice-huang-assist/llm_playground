@@ -25,6 +25,9 @@ next-env.d.ts
 prisma/dev.db*
 drizzle/*.db
 
+# Generated images from the Images playground
+data/generations/
+
 # Testing
 coverage/
 .nyc_output/

@@ -2,9 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { openDatabase } from "@/lib/db/client";
 import { clearSetting, getSetting, setSetting } from "@/lib/db/settings";
+import {
+  DEFAULT_FORGE_BASE_URL,
+  FORGE_BASE_URL_KEY,
+} from "@/lib/providers/forge";
 import { OPENROUTER_API_KEY } from "@/lib/providers/openrouter";
 
 const KEY = "sk-or-v1-super-secret-value-9876";
+
+const defaultForge = {
+  baseUrl: DEFAULT_FORGE_BASE_URL,
+  isDefault: true,
+};
 
 const fake = vi.hoisted(() => ({ db: null as unknown }));
 
@@ -42,9 +51,10 @@ afterEach(() => {
 });
 
 describe("GET /api/settings", () => {
-  it("reports an unconfigured provider", async () => {
+  it("reports an unconfigured provider and default Forge URL", async () => {
     await expect((await GET()).json()).resolves.toEqual({
       openrouter: { configured: false, hint: null },
+      forge: defaultForge,
     });
   });
 
@@ -56,6 +66,7 @@ describe("GET /api/settings", () => {
 
     expect(JSON.parse(raw)).toEqual({
       openrouter: { configured: true, hint: "…9876" },
+      forge: defaultForge,
     });
     expect(raw).not.toContain(KEY);
     expect(raw).not.toContain("super-secret");
@@ -72,9 +83,40 @@ describe("PUT /api/settings", () => {
     expect(response.status).toBe(200);
     expect(JSON.parse(raw)).toEqual({
       openrouter: { configured: true, hint: "…9876" },
+      forge: defaultForge,
     });
     expect(raw).not.toContain(KEY);
     expect(getSetting(fake.db as never, OPENROUTER_API_KEY)).toBe(KEY);
+  });
+
+  it("stores a custom Forge base URL", async () => {
+    const response = await put({ forgeBaseUrl: "http://127.0.0.1:7861/" });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      openrouter: { configured: false, hint: null },
+      forge: { baseUrl: "http://127.0.0.1:7861", isDefault: false },
+    });
+    expect(getSetting(fake.db as never, FORGE_BASE_URL_KEY)).toBe(
+      "http://127.0.0.1:7861",
+    );
+  });
+
+  it("clears a stored Forge URL when saving the default", async () => {
+    setSetting(fake.db as never, FORGE_BASE_URL_KEY, "http://127.0.0.1:9000");
+
+    const response = await put({ forgeBaseUrl: DEFAULT_FORGE_BASE_URL });
+
+    expect(response.status).toBe(200);
+    expect(getSetting(fake.db as never, FORGE_BASE_URL_KEY)).toBeNull();
+    await expect(response.json()).resolves.toMatchObject({
+      forge: defaultForge,
+    });
+  });
+
+  it("rejects an invalid Forge URL", async () => {
+    const response = await put({ forgeBaseUrl: "not-a-url" });
+    expect(response.status).toBe(400);
   });
 
   it("trims surrounding whitespace before storing", async () => {
@@ -106,10 +148,10 @@ describe("PUT /api/settings", () => {
     expect(getSetting(fake.db as never, OPENROUTER_API_KEY)).toBe(KEY);
   });
 
-  it("rejects a missing or blank key without calling OpenRouter", async () => {
+  it("rejects a blank OpenRouter key without calling OpenRouter", async () => {
     const fetchSpy = mockFetch(async () => Response.json({}));
 
-    for (const body of [{}, { apiKey: "" }, { apiKey: "   " }, { apiKey: 7 }]) {
+    for (const body of [{ apiKey: "" }, { apiKey: "   " }, { apiKey: 7 }]) {
       const response = await put(body);
       expect(response.status).toBe(400);
       await expect(response.json()).resolves.toEqual({
@@ -118,6 +160,14 @@ describe("PUT /api/settings", () => {
     }
 
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty body", async () => {
+    const response = await put({});
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Provide an OpenRouter API key and/or a Forge base URL.",
+    });
   });
 });
 
@@ -129,6 +179,7 @@ describe("DELETE /api/settings", () => {
 
     await expect(response.json()).resolves.toEqual({
       openrouter: { configured: false, hint: null },
+      forge: defaultForge,
     });
     expect(getSetting(fake.db as never, OPENROUTER_API_KEY)).toBeNull();
   });

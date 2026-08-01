@@ -142,9 +142,14 @@ export default function Home() {
     <main className={styles.main}>
       <div className={styles.header}>
         <h1 className={styles.title}>LLM Playground</h1>
-        <Link className={styles.settingsLink} href="/settings">
-          Settings
-        </Link>
+        <nav className={styles.nav}>
+          <Link className={styles.navLink} href="/generate">
+            Images
+          </Link>
+          <Link className={styles.navLink} href="/settings">
+            Settings
+          </Link>
+        </nav>
       </div>
       <p className={styles.subtitle}>
         Models discovered across your local runtimes.

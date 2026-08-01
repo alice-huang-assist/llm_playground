@@ -3,15 +3,19 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge";
+
 import styles from "./page.module.css";
 
 interface SettingsPayload {
   openrouter: { configured: boolean; hint: string | null };
+  forge: { baseUrl: string; isDefault: boolean };
 }
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
   const [apiKey, setApiKey] = useState("");
+  const [forgeUrl, setForgeUrl] = useState(DEFAULT_FORGE_BASE_URL);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -22,7 +26,10 @@ export default function SettingsPage() {
     fetch("/api/settings")
       .then((response) => response.json() as Promise<SettingsPayload>)
       .then((payload) => {
-        if (active) setSettings(payload);
+        if (active) {
+          setSettings(payload);
+          setForgeUrl(payload.forge.baseUrl);
+        }
       })
       .catch((caught: unknown) => {
         if (active) {
@@ -35,7 +42,7 @@ export default function SettingsPage() {
     };
   }, []);
 
-  async function save() {
+  async function saveOpenRouter() {
     const value = apiKey.trim();
     if (value === "" || busy) return;
 
@@ -66,15 +73,46 @@ export default function SettingsPage() {
     }
   }
 
-  async function clear() {
+  async function clearOpenRouter() {
     setBusy(true);
     setError(null);
     setNotice(null);
 
     try {
       const response = await fetch("/api/settings", { method: "DELETE" });
-      setSettings((await response.json()) as SettingsPayload);
+      const payload = (await response.json()) as SettingsPayload;
+      setSettings(payload);
+      setForgeUrl(payload.forge.baseUrl);
       setNotice("Key cleared. OpenRouter is no longer offered.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveForge() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forgeBaseUrl: forgeUrl }),
+      });
+      const payload = (await response.json()) as SettingsPayload & {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setError(payload.error ?? `Could not save (${response.status}).`);
+        return;
+      }
+
+      setSettings(payload);
+      setForgeUrl(payload.forge.baseUrl);
+      setNotice("Forge URL saved.");
     } finally {
       setBusy(false);
     }
@@ -86,10 +124,47 @@ export default function SettingsPage() {
     <main className={styles.main}>
       <div className={styles.header}>
         <h1 className={styles.title}>Settings</h1>
-        <Link className={styles.back} href="/">
-          Back to playground
-        </Link>
+        <nav className={styles.nav}>
+          <Link className={styles.back} href="/">
+            Chat
+          </Link>
+          <Link className={styles.back} href="/generate">
+            Images
+          </Link>
+        </nav>
       </div>
+
+      <section className={styles.section}>
+        <h2 className={styles.heading}>Forge (image generation)</h2>
+        <p className={styles.note}>
+          Base URL of a local Forge or A1111-compatible server exposing{" "}
+          <code>/sdapi/v1</code>. Default is{" "}
+          <code>{DEFAULT_FORGE_BASE_URL}</code>. See{" "}
+          <Link href="/docs/images">Images setup docs</Link>.
+        </p>
+
+        <form
+          className={styles.row}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveForge();
+          }}
+        >
+          <input
+            className={styles.input}
+            type="url"
+            value={forgeUrl}
+            onChange={(event) => setForgeUrl(event.target.value)}
+            placeholder={DEFAULT_FORGE_BASE_URL}
+            autoComplete="off"
+            aria-label="Forge base URL"
+            disabled={busy}
+          />
+          <button type="submit" className={styles.button} disabled={busy}>
+            Save
+          </button>
+        </form>
+      </section>
 
       <section className={styles.section}>
         <h2 className={styles.heading}>OpenRouter</h2>
@@ -117,7 +192,7 @@ export default function SettingsPage() {
           className={styles.row}
           onSubmit={(event) => {
             event.preventDefault();
-            void save();
+            void saveOpenRouter();
           }}
         >
           <input
@@ -140,16 +215,16 @@ export default function SettingsPage() {
           <button
             type="button"
             className={styles.button}
-            onClick={() => void clear()}
+            onClick={() => void clearOpenRouter()}
             disabled={busy || !configured}
           >
             Clear
           </button>
         </form>
-
-        {error && <p className={styles.error}>{error}</p>}
-        {notice && <p className={styles.notice}>{notice}</p>}
       </section>
+
+      {error && <p className={styles.error}>{error}</p>}
+      {notice && <p className={styles.notice}>{notice}</p>}
     </main>
   );
 }
