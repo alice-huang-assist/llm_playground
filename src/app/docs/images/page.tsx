@@ -1,110 +1,174 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
 import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
 
-import styles from "./page.module.css";
+/** Inline command, path, or identifier — tinted so it reads as machine text. */
+function Code({ children }: { children: ReactNode }) {
+  return (
+    <code className="rounded-sm bg-surface-sunken px-1.5 py-0.5 font-mono text-[0.9em] text-ink">
+      {children}
+    </code>
+  );
+}
+
+const LINK_CLASS =
+  "text-accent-text underline underline-offset-2 transition-opacity hover:opacity-80";
+
+/** Leaves the app, so it is marked visually and for assistive tech. */
+function ExternalLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={LINK_CLASS}>
+      {children}
+      <span aria-hidden="true"> ↗</span>
+      <span className="sr-only"> (opens in a new tab)</span>
+    </a>
+  );
+}
+
+function Callout({
+  tone,
+  children,
+}: {
+  tone: "note" | "warning";
+  children: ReactNode;
+}) {
+  const toneClass =
+    tone === "warning"
+      ? "border-danger/40 bg-danger/8"
+      : "border-border bg-surface-sunken";
+  return (
+    <div className={`rounded-md border px-4 py-3 ${toneClass}`}>
+      <p className="text-meta tracking-wide text-ink-subtle uppercase">
+        {tone === "warning" ? "Warning" : "Note"}
+      </p>
+      <div className="mt-1 text-body text-ink">{children}</div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="font-display text-h2 text-ink">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+const LIST_CLASS =
+  "flex list-outside flex-col gap-3 pl-5 text-body leading-relaxed text-ink marker:text-ink-subtle";
 
 export default function ImagesDocsPage() {
   return (
-    <div className={styles.main}>
-      <section className={styles.section}>
-        <h2 className={styles.heading}>Setup (bundled — Apple Silicon)</h2>
-        <p className={styles.copy}>
-          This path installs Forge and ComfyUI under <code>vendors/</code> on{" "}
+    // Measure capped near 68 characters so prose stays readable in a wide
+    // canvas. Expressed in rem rather than `ch`: the `ch` unit is the width of
+    // "0", which in Figtree is much wider than the average glyph — `68ch`
+    // measured out to ~86 characters per line, well past a comfortable measure.
+    <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-10 px-6 py-10">
+      <Section title="Setup (bundled — Apple Silicon)">
+        <Callout tone="note">
+          This path installs Forge and ComfyUI under <Code>vendors/</Code> on{" "}
           <strong>macOS arm64</strong> only (e.g. M4). It does not cover
           Windows, NVIDIA Linux, or Docker.
-        </p>
-        <ol className={styles.list}>
+        </Callout>
+
+        <ol className={`${LIST_CLASS} list-decimal`}>
           <li>
-            From the repo root: <code>npm run install:backends</code> — clones{" "}
-            <a
-              href="https://github.com/lllyasviel/stable-diffusion-webui-forge"
-              target="_blank"
-              rel="noreferrer"
-            >
+            From the repo root: <Code>npm run install:backends</Code> — clones{" "}
+            <ExternalLink href="https://github.com/lllyasviel/stable-diffusion-webui-forge">
               Forge
-            </a>{" "}
+            </ExternalLink>{" "}
             and{" "}
-            <a
-              href="https://github.com/comfyanonymous/ComfyUI"
-              target="_blank"
-              rel="noreferrer"
-            >
+            <ExternalLink href="https://github.com/comfyanonymous/ComfyUI">
               ComfyUI
-            </a>
+            </ExternalLink>
             , creates Python venvs, and shares checkpoints at{" "}
-            <code>vendors/models/checkpoints/</code>.
+            <Code>vendors/models/checkpoints/</Code>.
           </li>
           <li>
-            Drop at least one open-weight checkpoint (
-            <code>.safetensors</code>) into that shared folder. Nothing is
-            downloaded automatically.
+            Drop at least one open-weight checkpoint (<Code>.safetensors</Code>)
+            into that shared folder. Nothing is downloaded automatically.
           </li>
           <li>
-            Start everything with <code>npm run dev:all</code> (or{" "}
-            <code>npm run backends:start</code> then <code>npm run dev</code>).
+            Start everything with <Code>npm run dev:all</Code> (or{" "}
+            <Code>npm run backends:start</Code> then <Code>npm run dev</Code>).
             Defaults: Forge{" "}
-            <a href={DEFAULT_FORGE_BASE_URL} target="_blank" rel="noreferrer">
-              <code>{DEFAULT_FORGE_BASE_URL}</code>
-            </a>
+            <ExternalLink href={DEFAULT_FORGE_BASE_URL}>
+              <Code>{DEFAULT_FORGE_BASE_URL}</Code>
+            </ExternalLink>
             , ComfyUI{" "}
-            <a href={DEFAULT_COMFYUI_BASE_URL} target="_blank" rel="noreferrer">
-              <code>{DEFAULT_COMFYUI_BASE_URL}</code>
-            </a>
+            <ExternalLink href={DEFAULT_COMFYUI_BASE_URL}>
+              <Code>{DEFAULT_COMFYUI_BASE_URL}</Code>
+            </ExternalLink>
             .
           </li>
           <li>
-            In <Link href="/settings">Settings</Link>, change base URLs only if
-            you override ports.
+            In{" "}
+            <Link href="/settings" className={LINK_CLASS}>
+              Settings
+            </Link>
+            , change base URLs only if you override ports.
           </li>
         </ol>
-      </section>
+      </Section>
 
-      <section className={styles.section}>
-        <h2 className={styles.heading}>Setup (manual / external)</h2>
-        <ol className={styles.list}>
+      <Section title="Setup (manual / external)">
+        <ol className={`${LIST_CLASS} list-decimal`}>
           <li>
             Install and run Forge (API on{" "}
-            <a href={DEFAULT_FORGE_BASE_URL} target="_blank" rel="noreferrer">
-              <code>{DEFAULT_FORGE_BASE_URL}</code>
-            </a>
+            <ExternalLink href={DEFAULT_FORGE_BASE_URL}>
+              <Code>{DEFAULT_FORGE_BASE_URL}</Code>
+            </ExternalLink>
             ) and/or ComfyUI (
-            <a href={DEFAULT_COMFYUI_BASE_URL} target="_blank" rel="noreferrer">
-              <code>{DEFAULT_COMFYUI_BASE_URL}</code>
-            </a>
+            <ExternalLink href={DEFAULT_COMFYUI_BASE_URL}>
+              <Code>{DEFAULT_COMFYUI_BASE_URL}</Code>
+            </ExternalLink>
             ) yourself.
           </li>
           <li>Put checkpoints in each server’s models folder.</li>
           <li>
-            Point <Link href="/settings">Settings</Link> at those URLs.
+            Point{" "}
+            <Link href="/settings" className={LINK_CLASS}>
+              Settings
+            </Link>{" "}
+            at those URLs.
           </li>
         </ol>
-      </section>
+      </Section>
 
-      <section className={styles.section}>
-        <h2 className={styles.heading}>How to use</h2>
-        <ol className={styles.list}>
+      <Section title="How to use">
+        <ol className={`${LIST_CLASS} list-decimal`}>
           <li>
             From chat, click <strong>Images</strong> (or open{" "}
-            <Link href="/generate">/generate</Link>).
+            <Link href="/generate" className={LINK_CLASS}>
+              /generate
+            </Link>
+            ).
           </li>
           <li>
             Choose provider <strong>Forge</strong> or <strong>ComfyUI</strong>{" "}
             and a model. ComfyUI uses fixed workflows shipped with the app (no
-            node editor): checkpoints via <code>CheckpointLoaderSimple</code>,
-            and <strong>Z-Image-Turbo</strong> via a dedicated UNET / CLIP /
-            VAE graph when the weights are present under ComfyUI{" "}
-            <code>models/diffusion_models/</code> (with{" "}
-            <code>text_encoders/qwen_3_4b.safetensors</code> and{" "}
-            <code>vae/ae.safetensors</code>).
+            node editor): checkpoints via <Code>CheckpointLoaderSimple</Code>,
+            and <strong>Z-Image-Turbo</strong> via a dedicated UNET / CLIP / VAE
+            graph when the weights are present under ComfyUI{" "}
+            <Code>models/diffusion_models/</Code> (with{" "}
+            <Code>text_encoders/qwen_3_4b.safetensors</Code> and{" "}
+            <Code>vae/ae.safetensors</Code>).
           </li>
           <li>
             Enter a prompt (optional negative prompt). Adjust width, height,
             steps, CFG, sampler, and seed. Empty seed means random. Selecting
-            Z-Image applies steps 8 / CFG 1 / <code>res_multistep</code>. Comfy
-            scheduler is <code>normal</code> for checkpoints and{" "}
-            <code>simple</code> for Z-Image.
+            Z-Image applies steps 8 / CFG 1 / <Code>res_multistep</Code>. Comfy
+            scheduler is <Code>normal</Code> for checkpoints and{" "}
+            <Code>simple</Code> for Z-Image.
           </li>
           <li>
             Optional: attach a <strong>reference image</strong> to run img2img.
@@ -113,8 +177,8 @@ export default function ImagesDocsPage() {
             not re-attach the file — upload again to iterate.
           </li>
           <li>
-            Click <strong>Generate</strong>. Use <strong>Stop</strong> to cancel;
-            cancelled runs are not saved to history.
+            Click <strong>Generate</strong>. Use <strong>Stop</strong> to
+            cancel; cancelled runs are not saved to history.
           </li>
           <li>
             Successful images appear in the preview and the History rail (shared
@@ -127,34 +191,34 @@ export default function ImagesDocsPage() {
             unaffected.
           </li>
         </ol>
-      </section>
+      </Section>
 
-      <section className={styles.section}>
-        <h2 className={styles.heading}>Troubleshooting</h2>
-        <ul className={styles.list}>
+      <Section title="Troubleshooting">
+        <ul className={`${LIST_CLASS} list-disc`}>
           <li>
             <strong>Empty model list / backend unreachable</strong> — run{" "}
-            <code>npm run backends:start</code>; check{" "}
-            <code>vendors/logs/forge.log</code> and{" "}
-            <code>comfyui.log</code>. First Forge boot can take several minutes.
+            <Code>npm run backends:start</Code>; check{" "}
+            <Code>vendors/logs/forge.log</Code> and <Code>comfyui.log</Code>.
+            First Forge boot can take several minutes.
           </li>
           <li>
-            <strong>Still no models</strong> — add a{" "}
-            <code>.safetensors</code> under{" "}
-            <code>vendors/models/checkpoints/</code>, then restart backends.
-          </li>
-          <li>
-            <strong>OOM on M4</strong> — running both backends with large
-            checkpoints can exhaust unified memory. Use{" "}
-            <code>npm run backends:stop</code> (or kill one PID under{" "}
-            <code>vendors/run/</code>) and run a single provider.
+            <strong>Still no models</strong> — add a <Code>.safetensors</Code>{" "}
+            under <Code>vendors/models/checkpoints/</Code>, then restart
+            backends.
           </li>
           <li>
             <strong>install:backends refuses</strong> — Apple Silicon only. Use
             the manual setup above on other platforms.
           </li>
         </ul>
-      </section>
+
+        <Callout tone="warning">
+          <strong>OOM on M4</strong> — running both backends with large
+          checkpoints can exhaust unified memory. Use{" "}
+          <Code>npm run backends:stop</Code> (or kill one PID under{" "}
+          <Code>vendors/run/</Code>) and run a single provider.
+        </Callout>
+      </Section>
     </div>
   );
 }
