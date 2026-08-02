@@ -179,6 +179,10 @@ export default function Chat({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-6">
+          {/* The page's single h1. It sits inside the scroll area so it costs
+              no permanent vertical space above the conversation. */}
+          <h1 className="font-display text-h1 text-ink">Chat</h1>
+
           <SystemPrompt
             value={systemPrompt}
             onChange={setSystemPrompt}
@@ -188,9 +192,7 @@ export default function Chat({
 
           {turns.length === 0 ? (
             <div className="py-16 text-center">
-              <p className="font-display text-h2 text-ink">
-                Nothing here yet.
-              </p>
+              <p className="font-display text-h2 text-ink">Nothing here yet.</p>
               <p className="mt-2 text-body text-ink-muted">
                 {model
                   ? "Send a message to start the conversation."

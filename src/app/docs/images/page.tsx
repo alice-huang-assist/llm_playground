@@ -73,6 +73,7 @@ export default function ImagesDocsPage() {
     // "0", which in Figtree is much wider than the average glyph — `68ch`
     // measured out to ~86 characters per line, well past a comfortable measure.
     <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-10 px-6 py-10">
+      <h1 className="font-display text-h1 text-ink">Images playground</h1>
       <Section title="Setup (bundled — Apple Silicon)">
         <Callout tone="note">
           This path installs Forge and ComfyUI under <Code>vendors/</Code> on{" "}
