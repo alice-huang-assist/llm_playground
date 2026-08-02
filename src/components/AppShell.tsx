@@ -93,10 +93,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <SlotContext.Provider value={slots}>
       <div className="flex min-h-screen flex-col lg:h-screen lg:min-h-0 lg:flex-row lg:overflow-hidden">
         <aside className="order-1 flex w-full flex-col border-b border-border bg-surface lg:h-full lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0">
+          {/* The wordmark names the app, not the page, so it is not a heading.
+              Each route owns the document's single h1 (ALI-28). */}
           <Link href="/" className="px-5 pt-6 pb-5">
-            <h1 className="font-display text-h2 leading-none">
+            <span className="block font-display text-h2 leading-none">
               LLM Playground
-            </h1>
+            </span>
           </Link>
 
           <nav aria-label="Primary" className="flex flex-col gap-0.5 px-3">

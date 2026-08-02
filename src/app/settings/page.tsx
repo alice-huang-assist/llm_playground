@@ -284,6 +284,7 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-6 py-8">
+      <h1 className="font-display text-h1 text-ink">Settings</h1>
       <Card title="Models">
         {ollama === "checking" ? (
           <p className="text-meta text-ink-subtle">Checking Ollama…</p>
@@ -346,7 +347,10 @@ export default function SettingsPage() {
         <div className="flex flex-col gap-3 border-t border-border pt-5">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <h3 className="text-label text-ink">ComfyUI</h3>
-            <Status state={comfyReach} isDefault={settings?.comfyui.isDefault} />
+            <Status
+              state={comfyReach}
+              isDefault={settings?.comfyui.isDefault}
+            />
           </div>
           <p className="text-meta text-ink-subtle">
             Base URL of a local ComfyUI server with the HTTP API enabled.

@@ -1006,6 +1006,7 @@ export default function GeneratePage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8">
+          <h1 className="font-display text-h1 text-ink">Images</h1>
           {!reachable && (
             <p
               className="rounded-md border border-danger bg-surface px-4 py-3 text-label text-danger"
