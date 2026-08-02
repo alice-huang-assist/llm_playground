@@ -2,8 +2,6 @@
 
 import { useRef, useState } from "react";
 
-import styles from "./ModelInstaller.module.css";
-
 interface PullEvent {
   type: "progress" | "error" | "done";
   status?: string;
@@ -107,10 +105,13 @@ export default function ModelInstaller({
 
   if (!available) {
     return (
-      <p className={styles.unavailable}>
-        Model install needs Ollama — start its server to install models. LM
-        Studio has no pull API.
-      </p>
+      <div className="rounded-sm border border-border bg-surface-sunken px-4 py-3">
+        <p className="text-label text-ink">Ollama is not reachable.</p>
+        <p className="mt-1 text-meta text-ink-subtle">
+          Start the Ollama server to install models. LM Studio exposes no pull
+          API, so it cannot install models either way.
+        </p>
+      </div>
     );
   }
 
@@ -118,13 +119,13 @@ export default function ModelInstaller({
   const digest = shortDigest(progress?.digest);
 
   return (
-    <div className={styles.installer}>
-      <label className={styles.label} htmlFor="install-model">
+    <div className="flex flex-col gap-3">
+      <label className="text-label text-ink-muted" htmlFor="install-model">
         Install an Ollama model
       </label>
 
       <form
-        className={styles.row}
+        className="flex flex-wrap items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           void install();
@@ -132,7 +133,7 @@ export default function ModelInstaller({
       >
         <input
           id="install-model"
-          className={styles.input}
+          className="min-w-0 flex-1 rounded-sm border border-border bg-canvas px-3 py-1.5 font-mono text-label text-ink transition-colors placeholder:text-ink-subtle focus:border-accent disabled:text-ink-subtle"
           value={name}
           onChange={(event) => setName(event.target.value)}
           placeholder="llama3.3:70b"
@@ -140,14 +141,14 @@ export default function ModelInstaller({
         />
         <button
           type="submit"
-          className={styles.button}
+          className="rounded-sm bg-accent px-3.5 py-1.5 text-label text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-border disabled:text-ink-subtle"
           disabled={pulling || name.trim() === ""}
         >
           Install
         </button>
         <button
           type="button"
-          className={styles.button}
+          className="rounded-sm border border-border px-3 py-1.5 text-label text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:cursor-not-allowed disabled:text-ink-subtle"
           onClick={() => abortRef.current?.abort()}
           disabled={!pulling}
         >
@@ -155,28 +156,35 @@ export default function ModelInstaller({
         </button>
       </form>
 
-      <p className={styles.note}>
+      <p className="text-meta text-ink-subtle">
         Ollama only — LM Studio exposes no pull API. Type an exact model name.
       </p>
 
       {pulling && (
-        <div className={styles.progress}>
-          <span className={styles.status}>
-            {progress?.status ?? "starting…"}
-            {digest ? ` · ${digest}` : ""}
-          </span>
-          <span className={styles.percent}>
-            {typeof percent === "number" ? `${percent}%` : "—"}
-          </span>
+        <div className="flex flex-col gap-1.5" role="status">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="truncate text-meta text-ink-muted">
+              {progress?.status ?? "starting…"}
+              {digest ? ` · ${digest}` : ""}
+            </span>
+            <span className="shrink-0 font-mono text-meta text-accent-text">
+              {typeof percent === "number" ? `${percent}%` : "—"}
+            </span>
+          </div>
+          {/* `value` left undefined renders the indeterminate bar. */}
           <progress
-            className={styles.bar}
+            className="h-1.5 w-full accent-accent"
             max={100}
             value={typeof percent === "number" ? percent : undefined}
           />
         </div>
       )}
 
-      {error && <p className={styles.error}>{error}</p>}
+      {error && (
+        <p className="text-meta text-danger" role="status">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
