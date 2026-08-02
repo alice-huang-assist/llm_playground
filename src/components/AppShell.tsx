@@ -5,24 +5,19 @@ import { usePathname } from "next/navigation";
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 
 import ThemeToggle from "@/components/ThemeToggle";
-import { DEFAULT_COMFYUI_BASE_URL } from "@/lib/providers/comfyui-shared";
-import { DEFAULT_FORGE_BASE_URL } from "@/lib/providers/forge-shared";
+import { DEFAULT_BACKEND_URLS, resolveBackendUrls } from "@/lib/backend-urls";
 
 const NAV = [
   { href: "/", label: "Chat" },
   { href: "/generate", label: "Images" },
   { href: "/settings", label: "Settings" },
-] as const;
-
-const EXTERNAL = [
-  { href: DEFAULT_FORGE_BASE_URL, label: "Forge" },
-  { href: DEFAULT_COMFYUI_BASE_URL, label: "ComfyUI" },
 ] as const;
 
 /**
@@ -50,6 +45,39 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [contextualEl, setContextualEl] = useState<HTMLElement | null>(null);
   const [inspectorEl, setInspectorEl] = useState<HTMLElement | null>(null);
 
+  // The footer links follow whatever Settings has stored. The shell mounts once
+  // in the root layout, so this runs once per page load rather than once per
+  // client-side navigation. Defaults stand in until it resolves — and stay if
+  // it fails — so the links are never dead while in flight.
+  const [backends, setBackends] = useState(DEFAULT_BACKEND_URLS);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/settings");
+        if (!response.ok) return;
+        const payload: unknown = await response.json();
+        if (active) setBackends(resolveBackendUrls(payload));
+      } catch {
+        // Offline or the route is down — the defaults already in state stand.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const external = useMemo(
+    () => [
+      { href: backends.forgeUrl, label: "Forge" },
+      { href: backends.comfyUrl, label: "ComfyUI" },
+    ],
+    [backends],
+  );
+
   const slots = useMemo(
     () => ({ contextualEl, inspectorEl }),
     [contextualEl, inspectorEl],
@@ -66,7 +94,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen flex-col lg:h-screen lg:min-h-0 lg:flex-row lg:overflow-hidden">
         <aside className="order-1 flex w-full flex-col border-b border-border bg-surface lg:h-full lg:w-64 lg:shrink-0 lg:border-r lg:border-b-0">
           <Link href="/" className="px-5 pt-6 pb-5">
-            <h1 className="font-display text-h2 leading-none">LLM Playground</h1>
+            <h1 className="font-display text-h2 leading-none">
+              LLM Playground
+            </h1>
           </Link>
 
           <nav aria-label="Primary" className="flex flex-col gap-0.5 px-3">
@@ -98,7 +128,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
           <div className="mt-auto flex flex-col gap-3 px-5 pt-6 pb-5">
             <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {EXTERNAL.map((item) => (
+              {external.map((item) => (
                 <a
                   key={item.label}
                   href={item.href}
