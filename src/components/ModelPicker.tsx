@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 
 import type { Model, ProviderModels } from "@/lib/providers/types";
 
-import styles from "./ModelPicker.module.css";
-
 function modelKey(model: Model) {
   return `${model.providerId}:${model.id}`;
 }
@@ -58,11 +56,13 @@ export default function ModelPicker({
   }, [reloadToken, onLoad]);
 
   if (loadError) {
-    return <p className={styles.error}>Could not load models: {loadError}</p>;
+    return (
+      <p className="text-label text-danger">Could not load models: {loadError}</p>
+    );
   }
 
   if (!providers) {
-    return <p className={styles.selection}>Loading models…</p>;
+    return <p className="text-label text-ink-subtle">Loading models…</p>;
   }
 
   const models = providers.flatMap((provider) =>
@@ -74,13 +74,13 @@ export default function ModelPicker({
   const selected = models.find((model) => modelKey(model) === currentKey);
 
   return (
-    <div className={styles.picker}>
-      <label className={styles.label} htmlFor="model">
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <label className="sr-only" htmlFor="model">
         Model
       </label>
       <select
         id="model"
-        className={styles.select}
+        className="min-w-0 max-w-full rounded-sm border border-border bg-surface px-2.5 py-1.5 font-mono text-label text-ink transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:text-ink-subtle"
         value={currentKey}
         onChange={(event) => {
           const key = event.target.value;
@@ -101,25 +101,17 @@ export default function ModelPicker({
         ))}
       </select>
 
-      <p className={styles.selection}>
-        {selected ? (
-          <>
-            Selected: <strong>{selected.id}</strong> ({selected.providerName})
-          </>
-        ) : (
-          "No model selected"
-        )}
-      </p>
+      {selected ? (
+        <span className="text-meta text-ink-subtle">
+          {selected.providerName}
+        </span>
+      ) : null}
 
       {unreachable.length > 0 && (
-        <ul className={styles.unreachable}>
-          {unreachable.map((provider) => (
-            <li key={provider.providerId}>
-              {provider.providerName} is unreachable — its server does not
-              appear to be running.
-            </li>
-          ))}
-        </ul>
+        <span className="text-meta text-ink-subtle">
+          {unreachable.map((provider) => provider.providerName).join(", ")}{" "}
+          unreachable
+        </span>
       )}
     </div>
   );
