@@ -21,7 +21,7 @@ import {
   clampSteps,
   type ImageParamValues,
 } from "@/lib/image-params";
-import { groupGenerations } from "@/lib/generation-history";
+import { formatRelativeTime, groupGenerations } from "@/lib/generation-history";
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
@@ -35,8 +35,6 @@ import {
   FORGE_PROVIDER_ID,
   FORGE_PROVIDER_NAME,
 } from "@/lib/providers/forge-shared";
-
-import styles from "./page.module.css";
 
 interface ImageModel {
   id: string;
@@ -85,6 +83,64 @@ function snippet(prompt: string): string {
   if (cleaned === "") return "(empty prompt)";
   return cleaned.length > 64 ? `${cleaned.slice(0, 63).trimEnd()}…` : cleaned;
 }
+
+/**
+ * A history row. Defined at module scope rather than inline so React's compiler
+ * can see that `onOpen` is only ever a prop — a helper called during render
+ * makes any ref it can reach look like a render-time ref access.
+ */
+function HistoryRow({
+  id,
+  createdAt,
+  label,
+  active,
+  onOpen,
+  actions,
+}: {
+  id: string;
+  createdAt: string;
+  label: string;
+  active: boolean;
+  onOpen: () => void;
+  actions: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`group/row rounded-sm transition-colors ${
+        active ? "bg-accent-subtle" : "hover:bg-surface-sunken"
+      }`}
+    >
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left"
+        onClick={onOpen}
+        aria-current={active ? "true" : undefined}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="size-9 shrink-0 rounded-sm object-cover"
+          src={`/api/images/generations/${id}/file`}
+          alt=""
+        />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-meta text-ink">{label}</span>
+          <span className="font-mono text-meta text-ink-subtle">
+            {formatRelativeTime(createdAt)}
+          </span>
+        </span>
+      </button>
+      {/* Visible on hover and on keyboard focus, never hover-only (AC-2). */}
+      <div className="invisible flex gap-2 px-2 pb-1.5 group-focus-within/row:visible group-hover/row:visible">
+        {actions}
+      </div>
+    </div>
+  );
+}
+
+const ROW_BUTTON =
+  "rounded-sm text-meta text-ink-subtle transition-colors hover:text-ink";
+const ROW_DANGER =
+  "rounded-sm text-meta text-danger transition-opacity hover:opacity-80";
 
 export default function GeneratePage() {
   const [providerId, setProviderId] = useState<string>(FORGE_PROVIDER_ID);
@@ -565,18 +621,32 @@ export default function GeneratePage() {
     !busy && !livePreviewUrl && previewIds.length > 1 ? previewIds : null;
   const lightboxIds =
     previewIds.length > 0 ? previewIds : activeId ? [activeId] : [];
-  const lightboxImages = lightboxIds.map((id) => ({
-    id,
-    src: `/api/images/generations/${id}/file`,
-    alt: prompt || "Generated image",
-  }));
+  const lightboxImages = lightboxIds.map((id) => {
+    // Metadata comes from the stored generation so the lightbox shows what
+    // actually produced the image, not whatever the form currently holds.
+    const record = history.find((entry) => entry.id === id);
+    return {
+      id,
+      src: `/api/images/generations/${id}/file`,
+      alt: prompt || "Generated image",
+      meta: record
+        ? {
+            prompt: record.prompt,
+            seed: record.seed,
+            sampler: record.sampler,
+            steps: record.steps,
+          }
+        : undefined,
+    };
+  });
 
   function openLightbox(id: string) {
     const index = lightboxIds.indexOf(id);
     setLightboxIndex(index >= 0 ? index : 0);
   }
 
-  const { inspectorEl } = useShellSlots();
+  const { contextualEl, inspectorEl } = useShellSlots();
+  const aspectRatio = `${params.width} / ${params.height}`;
   const [dragging, setDragging] = useState(false);
 
   const canGenerate =
@@ -595,6 +665,117 @@ export default function GeneratePage() {
   const groupClass = "flex flex-col gap-3";
   const groupHeadingClass = "font-display text-h2 text-ink";
   const fieldLabelClass = "text-label text-ink-muted";
+
+  const historyPanel = (
+    <section className="flex flex-col gap-2">
+      <h2 className="px-1 text-meta tracking-wide text-ink-subtle uppercase">
+        History
+      </h2>
+      {history.length === 0 ? (
+        <p className="px-1 text-meta text-ink-subtle">No generations yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5">
+          {historyGroups.map((group) =>
+            group.kind === "single" ? (
+              <li key={group.item.id}>
+                <HistoryRow
+                  id={group.item.id}
+                  createdAt={group.item.createdAt}
+                  label={`${group.item.usedReference ? "img2img · " : ""}${snippet(group.item.prompt)}`}
+                  active={group.item.id === activeId}
+                  onOpen={() => applyGeneration(group.item)}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className={ROW_BUTTON}
+                        onClick={() => download(group.item.id)}
+                      >
+                        Download
+                      </button>
+                      <button
+                        type="button"
+                        className={ROW_DANGER}
+                        onClick={() => void remove(group.item.id)}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  }
+                />
+              </li>
+            ) : (
+              <li key={group.batchId}>
+                <HistoryRow
+                  id={group.items[0]!.id}
+                  createdAt={group.items[0]!.createdAt}
+                  label={`${group.items[0]!.usedReference ? "img2img · " : ""}${snippet(group.items[0]!.prompt)} · ${group.items.length} images`}
+                  active={group.items.some((item) => item.id === activeId)}
+                  onOpen={() => {
+                    toggleBatch(group.batchId);
+                    applyGeneration(group.items[0]!, group.items);
+                  }}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className={ROW_BUTTON}
+                        onClick={() => toggleBatch(group.batchId)}
+                      >
+                        {expandedBatches.has(group.batchId)
+                          ? "Collapse"
+                          : "Expand"}
+                      </button>
+                      <button
+                        type="button"
+                        className={ROW_DANGER}
+                        onClick={() => void removeBatch(group.batchId)}
+                      >
+                        Delete all
+                      </button>
+                    </>
+                  }
+                />
+                {expandedBatches.has(group.batchId) && (
+                  <ul className="mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
+                    {group.items.map((item) => (
+                      <li key={item.id}>
+                        <HistoryRow
+                          id={item.id}
+                          createdAt={item.createdAt}
+                          label={`seed ${item.seed === null ? "—" : String(item.seed)}`}
+                          active={item.id === activeId}
+                          onOpen={() => applyGeneration(item, group.items)}
+                          actions={
+                            <>
+                              <button
+                                type="button"
+                                className={ROW_BUTTON}
+                                onClick={() => download(item.id)}
+                              >
+                                Download
+                              </button>
+                              <button
+                                type="button"
+                                className={ROW_DANGER}
+                                onClick={() => void remove(item.id)}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          }
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+    </section>
+  );
 
   const inspector = (
     <div className="flex flex-col gap-6 px-5 py-6">
@@ -824,7 +1005,7 @@ export default function GeneratePage() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={styles.main}>
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8">
           {!reachable && (
             <p
               className="rounded-md border border-danger bg-surface px-4 py-3 text-label text-danger"
@@ -988,230 +1169,114 @@ export default function GeneratePage() {
             )}
           </div>
 
-          <div className={styles.layout}>
-            <div className={styles.column}>
-              <div className={styles.preview}>
-                {livePreviewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+          <div className="flex flex-col gap-4">
+            {/* The wrapper is pinned to the requested aspect ratio while a run
+                is in flight, so the live preview swapping to the final image
+                does not move anything below it (AC-3, AC-6). */}
+            <div className="flex flex-col gap-3">
+              {livePreviewUrl ? (
+                <div
+                  className="w-full overflow-hidden rounded-md border border-border bg-surface-sunken shadow-sm"
+                  style={{ aspectRatio }}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    className={styles.image}
+                    className="size-full object-contain"
                     src={livePreviewUrl}
                     alt={prompt || "Generating preview"}
                   />
-                ) : gridIds ? (
-                  <div className={styles.previewGrid}>
-                    {gridIds.map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={
-                          id === activeId
-                            ? styles.previewGridItemActive
-                            : styles.previewGridItem
-                        }
-                        onClick={() => {
-                          const item = history.find((entry) => entry.id === id);
-                          if (item) applyGeneration(item);
-                          else setActiveId(id);
-                          openLightbox(id);
-                        }}
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          className={styles.previewGridImage}
-                          src={`/api/images/generations/${id}/file`}
-                          alt=""
-                        />
-                      </button>
-                    ))}
-                  </div>
-                ) : activeId ? (
-                  <button
-                    type="button"
-                    className={styles.imageButton}
-                    onClick={() => openLightbox(activeId)}
-                    aria-label="Open full view"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      className={styles.image}
-                      src={`/api/images/generations/${activeId}/file`}
-                      alt={prompt || "Generated image"}
-                    />
-                  </button>
-                ) : (
-                  <p className={styles.placeholder}>
-                    Generated images appear here.
+                </div>
+              ) : gridIds ? (
+                <div
+                  className={`grid gap-3 ${
+                    gridIds.length <= 2
+                      ? "grid-cols-2"
+                      : gridIds.length <= 4
+                        ? "grid-cols-2 lg:grid-cols-2"
+                        : "grid-cols-2 lg:grid-cols-4"
+                  }`}
+                >
+                  {gridIds.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={`group/result overflow-hidden rounded-md border shadow-sm transition-colors ${
+                        id === activeId
+                          ? "border-accent"
+                          : "border-border hover:border-border-strong"
+                      }`}
+                      style={{ aspectRatio }}
+                      onClick={() => {
+                        const item = history.find((entry) => entry.id === id);
+                        if (item) applyGeneration(item);
+                        else setActiveId(id);
+                        openLightbox(id);
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        className="size-full object-cover"
+                        src={`/api/images/generations/${id}/file`}
+                        alt=""
+                      />
+                    </button>
+                  ))}
+                </div>
+              ) : activeId ? (
+                <button
+                  type="button"
+                  className="w-full overflow-hidden rounded-md border border-border shadow-sm transition-colors hover:border-border-strong"
+                  style={{ aspectRatio }}
+                  onClick={() => openLightbox(activeId)}
+                  aria-label="Open full view"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="size-full object-contain"
+                    src={`/api/images/generations/${activeId}/file`}
+                    alt={prompt || "Generated image"}
+                  />
+                </button>
+              ) : busy ? (
+                <div
+                  className="w-full rounded-md border border-dashed border-border bg-surface-sunken"
+                  style={{ aspectRatio }}
+                />
+              ) : (
+                <div className="rounded-md border border-dashed border-border px-6 py-14 text-center">
+                  <p className="font-display text-h2 text-ink">
+                    Nothing generated yet.
                   </p>
-                )}
-                {busy && (
-                  <div className={styles.previewProgress} aria-live="polite">
-                    <span className={styles.previewProgressLabel}>
+                  <p className="mt-2 text-body text-ink-muted">
+                    Write a prompt and hit Generate — results land here.
+                  </p>
+                </div>
+              )}
+
+              {busy && (
+                <div className="flex flex-col gap-1.5" aria-live="polite">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="text-meta text-ink-muted">
+                      Generating…
+                    </span>
+                    <span className="font-mono text-meta text-accent-text">
                       {typeof progressPercent === "number"
                         ? `${progressPercent}%`
-                        : "Generating…"}
+                        : "—"}
                     </span>
-                    <progress
-                      className={styles.previewProgressBar}
-                      max={100}
-                      value={
-                        typeof progressPercent === "number"
-                          ? progressPercent
-                          : undefined
-                      }
-                    />
                   </div>
-                )}
-              </div>
-            </div>
-
-            <aside className={styles.rail}>
-              <h2 className={styles.railTitle}>History</h2>
-              {history.length === 0 ? (
-                <p className={styles.placeholder}>No generations yet.</p>
-              ) : (
-                <ul className={styles.history}>
-                  {historyGroups.map((group) =>
-                    group.kind === "single" ? (
-                      <li key={group.item.id}>
-                        <button
-                          type="button"
-                          className={
-                            group.item.id === activeId
-                              ? styles.historyItemActive
-                              : styles.historyItem
-                          }
-                          onClick={() => applyGeneration(group.item)}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            className={styles.thumb}
-                            src={`/api/images/generations/${group.item.id}/file`}
-                            alt=""
-                          />
-                          <span className={styles.historyText}>
-                            {group.item.usedReference ? "img2img · " : ""}
-                            {snippet(group.item.prompt)}
-                          </span>
-                        </button>
-                        <div className={styles.historyActions}>
-                          <button
-                            type="button"
-                            className={styles.smallButton}
-                            onClick={() => download(group.item.id)}
-                          >
-                            Download
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.danger}
-                            onClick={() => void remove(group.item.id)}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </li>
-                    ) : (
-                      <li key={group.batchId} className={styles.batchBlock}>
-                        <button
-                          type="button"
-                          className={
-                            group.items.some((item) => item.id === activeId)
-                              ? styles.historyItemActive
-                              : styles.historyItem
-                          }
-                          onClick={() => {
-                            toggleBatch(group.batchId);
-                            applyGeneration(group.items[0]!, group.items);
-                          }}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            className={styles.thumb}
-                            src={`/api/images/generations/${group.items[0]!.id}/file`}
-                            alt=""
-                          />
-                          <span className={styles.historyText}>
-                            {group.items[0]!.usedReference ? "img2img · " : ""}
-                            {snippet(group.items[0]!.prompt)}
-                            <span className={styles.batchCount}>
-                              {" "}
-                              · {group.items.length} images
-                            </span>
-                          </span>
-                        </button>
-                        <div className={styles.historyActions}>
-                          <button
-                            type="button"
-                            className={styles.smallButton}
-                            onClick={() => toggleBatch(group.batchId)}
-                          >
-                            {expandedBatches.has(group.batchId)
-                              ? "Collapse"
-                              : "Expand"}
-                          </button>
-                          <button
-                            type="button"
-                            className={styles.danger}
-                            onClick={() => void removeBatch(group.batchId)}
-                          >
-                            Delete all
-                          </button>
-                        </div>
-                        {expandedBatches.has(group.batchId) && (
-                          <ul className={styles.batchChildren}>
-                            {group.items.map((item) => (
-                              <li key={item.id}>
-                                <button
-                                  type="button"
-                                  className={
-                                    item.id === activeId
-                                      ? styles.historyItemActive
-                                      : styles.historyItem
-                                  }
-                                  onClick={() =>
-                                    applyGeneration(item, group.items)
-                                  }
-                                >
-                                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                                  <img
-                                    className={styles.thumb}
-                                    src={`/api/images/generations/${item.id}/file`}
-                                    alt=""
-                                  />
-                                  <span className={styles.historyText}>
-                                    seed{" "}
-                                    {item.seed === null
-                                      ? "—"
-                                      : String(item.seed)}
-                                  </span>
-                                </button>
-                                <div className={styles.historyActions}>
-                                  <button
-                                    type="button"
-                                    className={styles.smallButton}
-                                    onClick={() => download(item.id)}
-                                  >
-                                    Download
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className={styles.danger}
-                                    onClick={() => void remove(item.id)}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </li>
-                    ),
-                  )}
-                </ul>
+                  <progress
+                    className="h-1.5 w-full accent-accent"
+                    max={100}
+                    value={
+                      typeof progressPercent === "number"
+                        ? progressPercent
+                        : undefined
+                    }
+                  />
+                </div>
               )}
-            </aside>
+            </div>
           </div>
 
           {lightboxIndex !== null && lightboxImages.length > 0 && (
@@ -1233,6 +1298,7 @@ export default function GeneratePage() {
         </div>
       </div>
 
+      {contextualEl && createPortal(historyPanel, contextualEl)}
       {inspectorEl && createPortal(inspector, inspectorEl)}
     </div>
   );
