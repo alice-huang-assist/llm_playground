@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
+import { useShellSlots } from "@/components/AppShell";
 import ImageLightbox from "@/components/ImageLightbox";
 import {
   DEFAULT_DENOISING_STRENGTH,
@@ -160,9 +162,7 @@ export default function GeneratePage() {
         .slice()
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       setPreviewIds(
-        siblings.length > 0
-          ? siblings.map((item) => item.id)
-          : [generation.id],
+        siblings.length > 0 ? siblings.map((item) => item.id) : [generation.id],
       );
     } else {
       setPreviewIds([generation.id]);
@@ -286,19 +286,24 @@ export default function GeneratePage() {
     setError(null);
     const [modelsRes, samplersRes] = await Promise.all([
       fetch("/api/images/models"),
-      fetch(`/api/images/samplers?providerId=${encodeURIComponent(providerId)}`),
+      fetch(
+        `/api/images/samplers?providerId=${encodeURIComponent(providerId)}`,
+      ),
     ]);
 
     const modelsPayload = (await modelsRes.json()) as {
       providers: ImageProviderPayload[];
     };
     const provider =
-      modelsPayload.providers.find((entry) => entry.providerId === providerId) ??
-      modelsPayload.providers[0];
+      modelsPayload.providers.find(
+        (entry) => entry.providerId === providerId,
+      ) ?? modelsPayload.providers[0];
 
     if (provider) {
       setReachable(provider.reachable);
-      setReachError(provider.reachable ? null : (provider.error ?? "Unreachable"));
+      setReachError(
+        provider.reachable ? null : (provider.error ?? "Unreachable"),
+      );
       setBaseUrl(provider.baseUrl);
       setModels(provider.models);
       setModelId((current) => {
@@ -367,7 +372,8 @@ export default function GeneratePage() {
   }
 
   async function generate() {
-    if (busy || prompt.trim() === "" || modelId === "" || sampler === "") return;
+    if (busy || prompt.trim() === "" || modelId === "" || sampler === "")
+      return;
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -428,10 +434,18 @@ export default function GeneratePage() {
         if (line.trim() === "") return;
         const event = JSON.parse(line) as GenerateStreamEvent;
         if (event.type === "progress") {
-          if (typeof event.percent === "number" && Number.isFinite(event.percent)) {
-            setProgressPercent(Math.max(0, Math.min(100, Math.round(event.percent))));
+          if (
+            typeof event.percent === "number" &&
+            Number.isFinite(event.percent)
+          ) {
+            setProgressPercent(
+              Math.max(0, Math.min(100, Math.round(event.percent))),
+            );
           }
-          if (typeof event.currentImage === "string" && event.currentImage !== "") {
+          if (
+            typeof event.currentImage === "string" &&
+            event.currentImage !== ""
+          ) {
             setLivePreviewUrl(`data:image/png;base64,${event.currentImage}`);
           }
         } else if (event.type === "error") {
@@ -510,9 +524,12 @@ export default function GeneratePage() {
   }
 
   async function removeBatch(batchId: string) {
-    await fetch(`/api/images/generations/batch/${encodeURIComponent(batchId)}`, {
-      method: "DELETE",
-    });
+    await fetch(
+      `/api/images/generations/batch/${encodeURIComponent(batchId)}`,
+      {
+        method: "DELETE",
+      },
+    );
     setExpandedBatches((current) => {
       const next = new Set(current);
       next.delete(batchId);
@@ -547,11 +564,7 @@ export default function GeneratePage() {
   const gridIds =
     !busy && !livePreviewUrl && previewIds.length > 1 ? previewIds : null;
   const lightboxIds =
-    previewIds.length > 0
-      ? previewIds
-      : activeId
-        ? [activeId]
-        : [];
+    previewIds.length > 0 ? previewIds : activeId ? [activeId] : [];
   const lightboxImages = lightboxIds.map((id) => ({
     id,
     src: `/api/images/generations/${id}/file`,
@@ -563,6 +576,9 @@ export default function GeneratePage() {
     setLightboxIndex(index >= 0 ? index : 0);
   }
 
+  const { inspectorEl } = useShellSlots();
+  const [dragging, setDragging] = useState(false);
+
   const canGenerate =
     !busy &&
     reachable &&
@@ -570,536 +586,654 @@ export default function GeneratePage() {
     modelId !== "" &&
     sampler !== "";
 
-  return (
-    <div className={styles.main}>
-      <p className={styles.subtitle}>
-        Local Forge / ComfyUI playground — text-to-image, or img2img with an
-        optional reference.
-      </p>
+  const selectClass =
+    "min-w-0 max-w-56 truncate rounded-sm border border-border bg-surface px-2.5 py-1.5 font-mono text-label text-ink transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:text-ink-subtle";
+  const numberClass =
+    "w-full rounded-sm border border-border bg-canvas px-2.5 py-1.5 font-mono text-label text-ink transition-colors placeholder:text-ink-subtle focus:border-accent disabled:cursor-not-allowed disabled:text-ink-subtle";
+  const secondaryClass =
+    "rounded-sm border border-border px-3 py-1.5 text-label text-ink-muted transition-colors hover:border-border-strong hover:text-ink disabled:cursor-not-allowed disabled:text-ink-subtle";
+  const groupClass = "flex flex-col gap-3";
+  const groupHeadingClass = "font-display text-h2 text-ink";
+  const fieldLabelClass = "text-label text-ink-muted";
 
-      <div className={styles.layout}>
-        <div className={styles.column}>
+  const inspector = (
+    <div className="flex flex-col gap-6 px-5 py-6">
+      <section className={groupClass}>
+        <h2 className={groupHeadingClass}>Composition</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabelClass}>Width</span>
+            <input
+              className={numberClass}
+              type="number"
+              min={256}
+              max={2048}
+              step={64}
+              value={params.width}
+              disabled={busy}
+              onChange={(event) =>
+                setParams((current) => ({
+                  ...current,
+                  width: clampImageSize(event.target.value, current.width),
+                }))
+              }
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabelClass}>Height</span>
+            <input
+              className={numberClass}
+              type="number"
+              min={256}
+              max={2048}
+              step={64}
+              value={params.height}
+              disabled={busy}
+              onChange={(event) =>
+                setParams((current) => ({
+                  ...current,
+                  height: clampImageSize(event.target.value, current.height),
+                }))
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className={`${groupClass} border-t border-border pt-5`}>
+        <h2 className={groupHeadingClass}>Sampling</h2>
+        <label className="flex flex-col gap-1.5">
+          <span className={fieldLabelClass}>Sampler</span>
+          <select
+            className={selectClass}
+            value={sampler}
+            onChange={(event) => setSampler(event.target.value)}
+            disabled={busy || samplers.length === 0}
+          >
+            {samplers.length === 0 ? (
+              <option value="">No samplers</option>
+            ) : (
+              samplers.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))
+            )}
+          </select>
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabelClass}>Steps</span>
+            <input
+              className={numberClass}
+              type="number"
+              min={1}
+              max={150}
+              value={params.steps}
+              disabled={busy}
+              onChange={(event) =>
+                setParams((current) => ({
+                  ...current,
+                  steps: clampSteps(event.target.value, current.steps),
+                }))
+              }
+            />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabelClass}>CFG scale</span>
+            <input
+              className={numberClass}
+              type="number"
+              min={1}
+              max={30}
+              step={0.5}
+              value={params.cfgScale}
+              disabled={busy}
+              onChange={(event) =>
+                setParams((current) => ({
+                  ...current,
+                  cfgScale: clampCfgScale(event.target.value, current.cfgScale),
+                }))
+              }
+            />
+          </label>
+        </div>
+      </section>
+
+      <section className={`${groupClass} border-t border-border pt-5`}>
+        <h2 className={groupHeadingClass}>Output</h2>
+        <label className="flex flex-col gap-1.5">
+          <span className={fieldLabelClass}>Images (1–8)</span>
+          <input
+            className={numberClass}
+            type="number"
+            min={MIN_IMAGE_COUNT}
+            max={MAX_IMAGE_COUNT}
+            value={imageCount}
+            disabled={busy}
+            onChange={(event) =>
+              setImageCount(clampImageCount(event.target.value, imageCount))
+            }
+          />
+        </label>
+      </section>
+
+      {/* Collapsed by default, never hidden: seed and denoising are the two
+          controls a first run rarely touches (ALI-24 AC-2, NG-5). */}
+      <details className="group border-t border-border pt-5">
+        <summary className="flex cursor-pointer list-none items-center gap-2 text-label text-ink-muted transition-colors hover:text-ink">
+          <span
+            aria-hidden="true"
+            className="text-ink-subtle transition-transform group-open:rotate-90"
+          >
+            ›
+          </span>
+          Advanced
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
+            <span className={fieldLabelClass}>Seed (empty = random)</span>
+            <input
+              className={numberClass}
+              type="number"
+              value={seedInput}
+              disabled={busy}
+              placeholder="random"
+              onChange={(event) => {
+                setSeedInput(event.target.value);
+                setParams((current) => ({
+                  ...current,
+                  seed: clampSeed(event.target.value),
+                }));
+              }}
+            />
+          </label>
+          {referenceDataUrl && (
+            <label className="flex flex-col gap-1.5">
+              <span className={fieldLabelClass}>Denoising strength</span>
+              <input
+                className={numberClass}
+                type="number"
+                min={0.01}
+                max={1}
+                step={0.01}
+                value={denoisingStrength}
+                disabled={busy}
+                onChange={(event) =>
+                  setDenoisingStrength(
+                    clampDenoisingStrength(event.target.value),
+                  )
+                }
+              />
+            </label>
+          )}
+        </div>
+      </details>
+    </div>
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 border-b border-border bg-surface px-6 py-3">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-3">
+          <label className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-meta text-ink-subtle">Provider</span>
+            <select
+              className={selectClass}
+              value={providerId}
+              onChange={(event) => setProviderId(event.target.value)}
+              disabled={busy}
+            >
+              {PROVIDERS.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex min-w-0 items-center gap-2">
+            <span className="shrink-0 text-meta text-ink-subtle">Model</span>
+            <select
+              className={selectClass}
+              value={modelId}
+              onChange={(event) => onModelSelect(event.target.value)}
+              disabled={busy || models.length === 0}
+            >
+              {models.length === 0 ? (
+                <option value="">No models</option>
+              ) : (
+                models.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.title}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            className={`${secondaryClass} ml-auto`}
+            disabled={busy}
+            onClick={() => void loadProvider()}
+          >
+            Refresh models
+          </button>
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className={styles.main}>
           {!reachable && (
-            <p className={styles.banner} role="status">
+            <p
+              className="rounded-md border border-danger bg-surface px-4 py-3 text-label text-danger"
+              role="status"
+            >
               {providerId === COMFYUI_PROVIDER_ID ? "ComfyUI" : "Forge"} isn’t
               reachable at{" "}
-              <a href={baseUrl} target="_blank" rel="noreferrer">
-                <code>{baseUrl}</code>
+              <a
+                href={baseUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2"
+              >
+                <code className="font-mono">{baseUrl}</code>
               </a>
               {reachError ? ` (${reachError})` : ""}. Check{" "}
-              <Link href="/settings">Settings</Link> and see the{" "}
-              <Link href="/docs/images">setup docs</Link>.
+              <Link href="/settings" className="underline underline-offset-2">
+                Settings
+              </Link>{" "}
+              and see the{" "}
+              <Link
+                href="/docs/images"
+                className="underline underline-offset-2"
+              >
+                setup docs
+              </Link>
+              .
             </p>
           )}
 
-          <div className={styles.row}>
-            <label className={styles.field}>
-              <span className={styles.label}>Provider</span>
-              <select
-                className={styles.select}
-                value={providerId}
-                onChange={(event) => setProviderId(event.target.value)}
+          {/* The prompt block spans the full canvas so it stays dominant over
+              the inspector; results and history keep their existing grid
+              below, untouched until ALI-25 moves history into the rail. */}
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label text-ink-muted">Prompt</span>
+              <textarea
+                className="field-sizing-content min-h-24 w-full resize-y rounded-md border border-border bg-surface px-4 py-3 text-body text-ink transition-colors placeholder:text-ink-subtle focus:border-accent disabled:cursor-not-allowed disabled:text-ink-subtle"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                rows={4}
+                placeholder="Describe the image you want"
                 disabled={busy}
-              >
-                {PROVIDERS.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className={styles.field}>
-              <span className={styles.label}>Model</span>
-              <select
-                className={styles.select}
-                value={modelId}
-                onChange={(event) => onModelSelect(event.target.value)}
-                disabled={busy || models.length === 0}
-              >
-                {models.length === 0 ? (
-                  <option value="">No models</option>
-                ) : (
-                  models.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.title}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-          </div>
-
-          <label className={styles.field}>
-            <span className={styles.label}>Prompt</span>
-            <textarea
-              className={styles.textarea}
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={4}
-              disabled={busy}
-            />
-          </label>
-
-          <label className={styles.field}>
-            <span className={styles.label}>Negative prompt</span>
-            <textarea
-              className={styles.textarea}
-              value={negativePrompt}
-              onChange={(event) => setNegativePrompt(event.target.value)}
-              rows={2}
-              disabled={busy}
-            />
-          </label>
-
-          <div className={styles.field}>
-            <span className={styles.label}>
-              Reference image (optional — enables img2img)
-            </span>
-            <div className={styles.actions}>
-              <input
-                ref={fileInputRef}
-                className={styles.input}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                disabled={busy}
-                onChange={(event) =>
-                  onReferenceFile(event.target.files?.[0] ?? null)
-                }
               />
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-label text-ink-muted">Negative prompt</span>
+              <textarea
+                className="field-sizing-content min-h-14 w-full resize-y rounded-md border border-border bg-surface px-4 py-2.5 text-body text-ink transition-colors placeholder:text-ink-subtle focus:border-accent disabled:cursor-not-allowed disabled:text-ink-subtle"
+                value={negativePrompt}
+                onChange={(event) => setNegativePrompt(event.target.value)}
+                rows={2}
+                placeholder="What to avoid"
+                disabled={busy}
+              />
+            </label>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="text-label text-ink-muted">
+                Reference image{" "}
+                <span className="text-ink-subtle">
+                  (optional — enables img2img)
+                </span>
+              </span>
+
+              {referenceDataUrl ? (
+                <div className="flex items-center gap-3 rounded-md border border-border bg-surface p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className="size-16 shrink-0 rounded-sm object-cover"
+                    src={referenceDataUrl}
+                    alt="Reference preview"
+                  />
+                  <button
+                    type="button"
+                    className={secondaryClass}
+                    disabled={busy}
+                    onClick={clearReference}
+                  >
+                    Clear reference
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    if (!busy) setDragging(true);
+                  }}
+                  onDragLeave={() => setDragging(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragging(false);
+                    if (!busy) {
+                      onReferenceFile(event.dataTransfer.files?.[0] ?? null);
+                    }
+                  }}
+                  className={`rounded-md border border-dashed px-4 py-6 text-center transition-colors ${
+                    dragging
+                      ? "border-accent bg-accent-subtle"
+                      : "border-border bg-surface"
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className="text-label text-accent-text underline underline-offset-2 disabled:cursor-not-allowed disabled:text-ink-subtle disabled:no-underline"
+                    disabled={busy}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Choose an image
+                  </button>
+                  <span className="text-label text-ink-subtle">
+                    {" "}
+                    or drop one here
+                  </span>
+                  <p className="mt-1 text-meta text-ink-subtle">
+                    PNG, JPEG, or WebP
+                  </p>
+                  <input
+                    ref={fileInputRef}
+                    className="sr-only"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    disabled={busy}
+                    onChange={(event) =>
+                      onReferenceFile(event.target.files?.[0] ?? null)
+                    }
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2">
               <button
                 type="button"
-                className={styles.button}
-                disabled={busy || referenceDataUrl === null}
-                onClick={clearReference}
+                className="w-full rounded-md bg-accent px-4 py-2.5 text-label text-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:bg-border disabled:text-ink-subtle"
+                disabled={!canGenerate}
+                onClick={() => void generate()}
               >
-                Clear reference
+                Generate
+              </button>
+              <button
+                type="button"
+                className={secondaryClass}
+                disabled={!busy}
+                onClick={stop}
+              >
+                Stop
               </button>
             </div>
-            {referenceDataUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className={styles.refPreview}
-                src={referenceDataUrl}
-                alt="Reference preview"
-              />
+
+            {status && (
+              <p className="text-label text-ink-muted" role="status">
+                {status}
+              </p>
+            )}
+            {error && (
+              <p className="text-label text-danger" role="status">
+                {error}
+              </p>
             )}
           </div>
 
-          <div className={styles.grid}>
-            <label className={styles.field}>
-              <span className={styles.label}>Width</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={256}
-                max={2048}
-                step={64}
-                value={params.width}
-                disabled={busy}
-                onChange={(event) =>
-                  setParams((current) => ({
-                    ...current,
-                    width: clampImageSize(event.target.value, current.width),
-                  }))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>Height</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={256}
-                max={2048}
-                step={64}
-                value={params.height}
-                disabled={busy}
-                onChange={(event) =>
-                  setParams((current) => ({
-                    ...current,
-                    height: clampImageSize(event.target.value, current.height),
-                  }))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>Steps</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={1}
-                max={150}
-                value={params.steps}
-                disabled={busy}
-                onChange={(event) =>
-                  setParams((current) => ({
-                    ...current,
-                    steps: clampSteps(event.target.value, current.steps),
-                  }))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>CFG scale</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={1}
-                max={30}
-                step={0.5}
-                value={params.cfgScale}
-                disabled={busy}
-                onChange={(event) =>
-                  setParams((current) => ({
-                    ...current,
-                    cfgScale: clampCfgScale(
-                      event.target.value,
-                      current.cfgScale,
-                    ),
-                  }))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>Seed (empty = random)</span>
-              <input
-                className={styles.input}
-                type="number"
-                value={seedInput}
-                disabled={busy}
-                placeholder="random"
-                onChange={(event) => {
-                  setSeedInput(event.target.value);
-                  setParams((current) => ({
-                    ...current,
-                    seed: clampSeed(event.target.value),
-                  }));
-                }}
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>Images (1–8)</span>
-              <input
-                className={styles.input}
-                type="number"
-                min={MIN_IMAGE_COUNT}
-                max={MAX_IMAGE_COUNT}
-                value={imageCount}
-                disabled={busy}
-                onChange={(event) =>
-                  setImageCount(clampImageCount(event.target.value, imageCount))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              <span className={styles.label}>Sampler</span>
-              <select
-                className={styles.select}
-                value={sampler}
-                onChange={(event) => setSampler(event.target.value)}
-                disabled={busy || samplers.length === 0}
-              >
-                {samplers.length === 0 ? (
-                  <option value="">No samplers</option>
-                ) : (
-                  samplers.map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            {referenceDataUrl && (
-              <label className={styles.field}>
-                <span className={styles.label}>Denoising strength</span>
-                <input
-                  className={styles.input}
-                  type="number"
-                  min={0.01}
-                  max={1}
-                  step={0.01}
-                  value={denoisingStrength}
-                  disabled={busy}
-                  onChange={(event) =>
-                    setDenoisingStrength(
-                      clampDenoisingStrength(event.target.value),
-                    )
-                  }
-                />
-              </label>
-            )}
-          </div>
-
-          <div className={styles.actions}>
-            <button
-              type="button"
-              className={styles.button}
-              disabled={!canGenerate}
-              onClick={() => void generate()}
-            >
-              Generate
-            </button>
-            <button
-              type="button"
-              className={styles.button}
-              disabled={!busy}
-              onClick={stop}
-            >
-              Stop
-            </button>
-            <button
-              type="button"
-              className={styles.button}
-              disabled={busy}
-              onClick={() => void loadProvider()}
-            >
-              Refresh models
-            </button>
-          </div>
-
-          {status && <p className={styles.status}>{status}</p>}
-          {error && <p className={styles.error}>{error}</p>}
-
-          <div className={styles.preview}>
-            {livePreviewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                className={styles.image}
-                src={livePreviewUrl}
-                alt={prompt || "Generating preview"}
-              />
-            ) : gridIds ? (
-              <div className={styles.previewGrid}>
-                {gridIds.map((id) => (
+          <div className={styles.layout}>
+            <div className={styles.column}>
+              <div className={styles.preview}>
+                {livePreviewUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    className={styles.image}
+                    src={livePreviewUrl}
+                    alt={prompt || "Generating preview"}
+                  />
+                ) : gridIds ? (
+                  <div className={styles.previewGrid}>
+                    {gridIds.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={
+                          id === activeId
+                            ? styles.previewGridItemActive
+                            : styles.previewGridItem
+                        }
+                        onClick={() => {
+                          const item = history.find((entry) => entry.id === id);
+                          if (item) applyGeneration(item);
+                          else setActiveId(id);
+                          openLightbox(id);
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          className={styles.previewGridImage}
+                          src={`/api/images/generations/${id}/file`}
+                          alt=""
+                        />
+                      </button>
+                    ))}
+                  </div>
+                ) : activeId ? (
                   <button
-                    key={id}
                     type="button"
-                    className={
-                      id === activeId
-                        ? styles.previewGridItemActive
-                        : styles.previewGridItem
-                    }
-                    onClick={() => {
-                      const item = history.find((entry) => entry.id === id);
-                      if (item) applyGeneration(item);
-                      else setActiveId(id);
-                      openLightbox(id);
-                    }}
+                    className={styles.imageButton}
+                    onClick={() => openLightbox(activeId)}
+                    aria-label="Open full view"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      className={styles.previewGridImage}
-                      src={`/api/images/generations/${id}/file`}
-                      alt=""
+                      className={styles.image}
+                      src={`/api/images/generations/${activeId}/file`}
+                      alt={prompt || "Generated image"}
                     />
                   </button>
-                ))}
-              </div>
-            ) : activeId ? (
-              <button
-                type="button"
-                className={styles.imageButton}
-                onClick={() => openLightbox(activeId)}
-                aria-label="Open full view"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  className={styles.image}
-                  src={`/api/images/generations/${activeId}/file`}
-                  alt={prompt || "Generated image"}
-                />
-              </button>
-            ) : (
-              <p className={styles.placeholder}>
-                Generated images appear here.
-              </p>
-            )}
-            {busy && (
-              <div className={styles.previewProgress} aria-live="polite">
-                <span className={styles.previewProgressLabel}>
-                  {typeof progressPercent === "number"
-                    ? `${progressPercent}%`
-                    : "Generating…"}
-                </span>
-                <progress
-                  className={styles.previewProgressBar}
-                  max={100}
-                  value={
-                    typeof progressPercent === "number"
-                      ? progressPercent
-                      : undefined
-                  }
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        <aside className={styles.rail}>
-          <h2 className={styles.railTitle}>History</h2>
-          {history.length === 0 ? (
-            <p className={styles.placeholder}>No generations yet.</p>
-          ) : (
-            <ul className={styles.history}>
-              {historyGroups.map((group) =>
-                group.kind === "single" ? (
-                  <li key={group.item.id}>
-                    <button
-                      type="button"
-                      className={
-                        group.item.id === activeId
-                          ? styles.historyItemActive
-                          : styles.historyItem
-                      }
-                      onClick={() => applyGeneration(group.item)}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        className={styles.thumb}
-                        src={`/api/images/generations/${group.item.id}/file`}
-                        alt=""
-                      />
-                      <span className={styles.historyText}>
-                        {group.item.usedReference ? "img2img · " : ""}
-                        {snippet(group.item.prompt)}
-                      </span>
-                    </button>
-                    <div className={styles.historyActions}>
-                      <button
-                        type="button"
-                        className={styles.smallButton}
-                        onClick={() => download(group.item.id)}
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.danger}
-                        onClick={() => void remove(group.item.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
                 ) : (
-                  <li key={group.batchId} className={styles.batchBlock}>
-                    <button
-                      type="button"
-                      className={
-                        group.items.some((item) => item.id === activeId)
-                          ? styles.historyItemActive
-                          : styles.historyItem
+                  <p className={styles.placeholder}>
+                    Generated images appear here.
+                  </p>
+                )}
+                {busy && (
+                  <div className={styles.previewProgress} aria-live="polite">
+                    <span className={styles.previewProgressLabel}>
+                      {typeof progressPercent === "number"
+                        ? `${progressPercent}%`
+                        : "Generating…"}
+                    </span>
+                    <progress
+                      className={styles.previewProgressBar}
+                      max={100}
+                      value={
+                        typeof progressPercent === "number"
+                          ? progressPercent
+                          : undefined
                       }
-                      onClick={() => {
-                        toggleBatch(group.batchId);
-                        applyGeneration(group.items[0]!, group.items);
-                      }}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        className={styles.thumb}
-                        src={`/api/images/generations/${group.items[0]!.id}/file`}
-                        alt=""
-                      />
-                      <span className={styles.historyText}>
-                        {group.items[0]!.usedReference ? "img2img · " : ""}
-                        {snippet(group.items[0]!.prompt)}
-                        <span className={styles.batchCount}>
-                          {" "}
-                          · {group.items.length} images
-                        </span>
-                      </span>
-                    </button>
-                    <div className={styles.historyActions}>
-                      <button
-                        type="button"
-                        className={styles.smallButton}
-                        onClick={() => toggleBatch(group.batchId)}
-                      >
-                        {expandedBatches.has(group.batchId)
-                          ? "Collapse"
-                          : "Expand"}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.danger}
-                        onClick={() => void removeBatch(group.batchId)}
-                      >
-                        Delete all
-                      </button>
-                    </div>
-                    {expandedBatches.has(group.batchId) && (
-                      <ul className={styles.batchChildren}>
-                        {group.items.map((item) => (
-                          <li key={item.id}>
-                            <button
-                              type="button"
-                              className={
-                                item.id === activeId
-                                  ? styles.historyItemActive
-                                  : styles.historyItem
-                              }
-                              onClick={() =>
-                                applyGeneration(item, group.items)
-                              }
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                className={styles.thumb}
-                                src={`/api/images/generations/${item.id}/file`}
-                                alt=""
-                              />
-                              <span className={styles.historyText}>
-                                seed{" "}
-                                {item.seed === null ? "—" : String(item.seed)}
-                              </span>
-                            </button>
-                            <div className={styles.historyActions}>
-                              <button
-                                type="button"
-                                className={styles.smallButton}
-                                onClick={() => download(item.id)}
-                              >
-                                Download
-                              </button>
-                              <button
-                                type="button"
-                                className={styles.danger}
-                                onClick={() => void remove(item.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </li>
-                ),
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <aside className={styles.rail}>
+              <h2 className={styles.railTitle}>History</h2>
+              {history.length === 0 ? (
+                <p className={styles.placeholder}>No generations yet.</p>
+              ) : (
+                <ul className={styles.history}>
+                  {historyGroups.map((group) =>
+                    group.kind === "single" ? (
+                      <li key={group.item.id}>
+                        <button
+                          type="button"
+                          className={
+                            group.item.id === activeId
+                              ? styles.historyItemActive
+                              : styles.historyItem
+                          }
+                          onClick={() => applyGeneration(group.item)}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            className={styles.thumb}
+                            src={`/api/images/generations/${group.item.id}/file`}
+                            alt=""
+                          />
+                          <span className={styles.historyText}>
+                            {group.item.usedReference ? "img2img · " : ""}
+                            {snippet(group.item.prompt)}
+                          </span>
+                        </button>
+                        <div className={styles.historyActions}>
+                          <button
+                            type="button"
+                            className={styles.smallButton}
+                            onClick={() => download(group.item.id)}
+                          >
+                            Download
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.danger}
+                            onClick={() => void remove(group.item.id)}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </li>
+                    ) : (
+                      <li key={group.batchId} className={styles.batchBlock}>
+                        <button
+                          type="button"
+                          className={
+                            group.items.some((item) => item.id === activeId)
+                              ? styles.historyItemActive
+                              : styles.historyItem
+                          }
+                          onClick={() => {
+                            toggleBatch(group.batchId);
+                            applyGeneration(group.items[0]!, group.items);
+                          }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            className={styles.thumb}
+                            src={`/api/images/generations/${group.items[0]!.id}/file`}
+                            alt=""
+                          />
+                          <span className={styles.historyText}>
+                            {group.items[0]!.usedReference ? "img2img · " : ""}
+                            {snippet(group.items[0]!.prompt)}
+                            <span className={styles.batchCount}>
+                              {" "}
+                              · {group.items.length} images
+                            </span>
+                          </span>
+                        </button>
+                        <div className={styles.historyActions}>
+                          <button
+                            type="button"
+                            className={styles.smallButton}
+                            onClick={() => toggleBatch(group.batchId)}
+                          >
+                            {expandedBatches.has(group.batchId)
+                              ? "Collapse"
+                              : "Expand"}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.danger}
+                            onClick={() => void removeBatch(group.batchId)}
+                          >
+                            Delete all
+                          </button>
+                        </div>
+                        {expandedBatches.has(group.batchId) && (
+                          <ul className={styles.batchChildren}>
+                            {group.items.map((item) => (
+                              <li key={item.id}>
+                                <button
+                                  type="button"
+                                  className={
+                                    item.id === activeId
+                                      ? styles.historyItemActive
+                                      : styles.historyItem
+                                  }
+                                  onClick={() =>
+                                    applyGeneration(item, group.items)
+                                  }
+                                >
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    className={styles.thumb}
+                                    src={`/api/images/generations/${item.id}/file`}
+                                    alt=""
+                                  />
+                                  <span className={styles.historyText}>
+                                    seed{" "}
+                                    {item.seed === null
+                                      ? "—"
+                                      : String(item.seed)}
+                                  </span>
+                                </button>
+                                <div className={styles.historyActions}>
+                                  <button
+                                    type="button"
+                                    className={styles.smallButton}
+                                    onClick={() => download(item.id)}
+                                  >
+                                    Download
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={styles.danger}
+                                    onClick={() => void remove(item.id)}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ),
+                  )}
+                </ul>
               )}
-            </ul>
+            </aside>
+          </div>
+
+          {lightboxIndex !== null && lightboxImages.length > 0 && (
+            <ImageLightbox
+              images={lightboxImages}
+              index={lightboxIndex}
+              onClose={() => setLightboxIndex(null)}
+              onIndexChange={(nextIndex) => {
+                setLightboxIndex(nextIndex);
+                const nextId = lightboxIds[nextIndex];
+                if (nextId) {
+                  const item = history.find((entry) => entry.id === nextId);
+                  if (item) applyGeneration(item);
+                  else setActiveId(nextId);
+                }
+              }}
+            />
           )}
-        </aside>
+        </div>
       </div>
 
-      {lightboxIndex !== null && lightboxImages.length > 0 && (
-        <ImageLightbox
-          images={lightboxImages}
-          index={lightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-          onIndexChange={(nextIndex) => {
-            setLightboxIndex(nextIndex);
-            const nextId = lightboxIds[nextIndex];
-            if (nextId) {
-              const item = history.find((entry) => entry.id === nextId);
-              if (item) applyGeneration(item);
-              else setActiveId(nextId);
-            }
-          }}
-        />
-      )}
+      {inspectorEl && createPortal(inspector, inspectorEl)}
     </div>
   );
 }
