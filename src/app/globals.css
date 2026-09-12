@@ -132,8 +132,8 @@ html[data-theme="dark"] {
   --color-danger: var(--danger);
   --color-success: var(--success);
 
-  --font-display: var(--font-instrument-serif), Georgia, "Times New Roman", serif;
-  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, monospace;
 
   --text-h1: 2rem;
@@ -203,12 +203,20 @@ html[data-theme="dark"] {
     text-decoration: none;
   }
 
-  /* Headings pick up the display face; existing route styles keep their own
-     sizes and weights, which outrank this by specificity. */
+  /* Headings share the UI sans at a firmer weight so they read as titles
+     without a separate display face. Route styles keep their own sizes. */
   h1,
   h2,
   h3 {
     font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  /* Non-heading titles (wordmark, empty states) that opt into font-display. */
+  .font-display {
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
   /* Preflight zeroes list styling, but this app's reset never did — restore it

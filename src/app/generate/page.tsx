@@ -25,7 +25,17 @@ import { formatRelativeTime, groupGenerations } from "@/lib/generation-history";
 import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
+  FLUX_DEFAULT_CFG,
+  FLUX_DEFAULT_SAMPLER,
+  FLUX_DEFAULT_STEPS,
+  isFluxModel,
+  isWanT2VModel,
   isZImageModel,
+  WAN_T2V_DEFAULT_CFG,
+  WAN_T2V_DEFAULT_HEIGHT,
+  WAN_T2V_DEFAULT_SAMPLER,
+  WAN_T2V_DEFAULT_STEPS,
+  WAN_T2V_DEFAULT_WIDTH,
   Z_IMAGE_DEFAULT_CFG,
   Z_IMAGE_DEFAULT_SAMPLER,
   Z_IMAGE_DEFAULT_STEPS,
@@ -65,6 +75,7 @@ interface GenerationSummary {
   usedReference: boolean;
   denoisingStrength: number | null;
   batchId: string | null;
+  mediaKind?: "image" | "video";
   createdAt: string;
 }
 
@@ -94,6 +105,7 @@ function HistoryRow({
   createdAt,
   label,
   active,
+  mediaKind = "image",
   onOpen,
   actions,
 }: {
@@ -101,6 +113,7 @@ function HistoryRow({
   createdAt: string;
   label: string;
   active: boolean;
+  mediaKind?: "image" | "video";
   onOpen: () => void;
   actions: React.ReactNode;
 }) {
@@ -116,12 +129,22 @@ function HistoryRow({
         onClick={onOpen}
         aria-current={active ? "true" : undefined}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          className="size-9 shrink-0 rounded-sm object-cover"
-          src={`/api/images/generations/${id}/file`}
-          alt=""
-        />
+        {mediaKind === "video" ? (
+          <video
+            className="size-9 shrink-0 rounded-sm object-cover"
+            src={`/api/images/generations/${id}/file`}
+            muted
+            playsInline
+            preload="metadata"
+          />
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            className="size-9 shrink-0 rounded-sm object-cover"
+            src={`/api/images/generations/${id}/file`}
+            alt=""
+          />
+        )}
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-meta text-ink">{label}</span>
           <span className="font-mono text-meta text-ink-subtle">
@@ -185,18 +208,44 @@ export default function GeneratePage() {
     setLivePreviewUrl(null);
   }
 
-  /** User picked a model in the dropdown — apply Z-Image defaults when needed. */
+  /** User picked a model — apply family defaults (Z-Image / Flux) when needed. */
   function onModelSelect(nextModelId: string) {
     setModelId(nextModelId);
-    if (!isZImageModel(nextModelId)) return;
+    if (isZImageModel(nextModelId)) {
+      setParams((current) => ({
+        ...current,
+        steps: Z_IMAGE_DEFAULT_STEPS,
+        cfgScale: Z_IMAGE_DEFAULT_CFG,
+      }));
+      if (samplers.includes(Z_IMAGE_DEFAULT_SAMPLER)) {
+        setSampler(Z_IMAGE_DEFAULT_SAMPLER);
+      }
+      return;
+    }
+    if (isFluxModel(nextModelId)) {
+      setParams((current) => ({
+        ...current,
+        steps: FLUX_DEFAULT_STEPS,
+        cfgScale: FLUX_DEFAULT_CFG,
+      }));
+      if (samplers.includes(FLUX_DEFAULT_SAMPLER)) {
+        setSampler(FLUX_DEFAULT_SAMPLER);
+      }
+      return;
+    }
+    if (!isWanT2VModel(nextModelId)) return;
     setParams((current) => ({
       ...current,
-      steps: Z_IMAGE_DEFAULT_STEPS,
-      cfgScale: Z_IMAGE_DEFAULT_CFG,
+      width: WAN_T2V_DEFAULT_WIDTH,
+      height: WAN_T2V_DEFAULT_HEIGHT,
+      steps: WAN_T2V_DEFAULT_STEPS,
+      cfgScale: WAN_T2V_DEFAULT_CFG,
     }));
-    if (samplers.includes(Z_IMAGE_DEFAULT_SAMPLER)) {
-      setSampler(Z_IMAGE_DEFAULT_SAMPLER);
+    if (samplers.includes(WAN_T2V_DEFAULT_SAMPLER)) {
+      setSampler(WAN_T2V_DEFAULT_SAMPLER);
     }
+    // T2V has no img2img path in this app.
+    setReferenceDataUrl(null);
   }
 
   function showGenerations(items: GenerationSummary[]) {
@@ -610,9 +659,11 @@ export default function GeneratePage() {
   }
 
   function download(id: string) {
+    const record = history.find((entry) => entry.id === id);
+    const ext = record?.mediaKind === "video" ? "mp4" : "png";
     const anchor = document.createElement("a");
     anchor.href = `/api/images/generations/${id}/file`;
-    anchor.download = `${id}.png`;
+    anchor.download = `${id}.${ext}`;
     anchor.click();
   }
 
@@ -629,6 +680,7 @@ export default function GeneratePage() {
       id,
       src: `/api/images/generations/${id}/file`,
       alt: prompt || "Generated image",
+      kind: record?.mediaKind === "video" ? ("video" as const) : ("image" as const),
       meta: record
         ? {
             prompt: record.prompt,
@@ -639,6 +691,9 @@ export default function GeneratePage() {
         : undefined,
     };
   });
+
+  const activeMediaKind =
+    history.find((entry) => entry.id === activeId)?.mediaKind ?? "image";
 
   function openLightbox(id: string) {
     const index = lightboxIds.indexOf(id);
@@ -681,8 +736,9 @@ export default function GeneratePage() {
                 <HistoryRow
                   id={group.item.id}
                   createdAt={group.item.createdAt}
-                  label={`${group.item.usedReference ? "img2img · " : ""}${snippet(group.item.prompt)}`}
+                  label={`${group.item.mediaKind === "video" ? "video · " : group.item.usedReference ? "img2img · " : ""}${snippet(group.item.prompt)}`}
                   active={group.item.id === activeId}
+                  mediaKind={group.item.mediaKind}
                   onOpen={() => applyGeneration(group.item)}
                   actions={
                     <>
@@ -711,6 +767,7 @@ export default function GeneratePage() {
                   createdAt={group.items[0]!.createdAt}
                   label={`${group.items[0]!.usedReference ? "img2img · " : ""}${snippet(group.items[0]!.prompt)} · ${group.items.length} images`}
                   active={group.items.some((item) => item.id === activeId)}
+                  mediaKind={group.items[0]!.mediaKind}
                   onOpen={() => {
                     toggleBatch(group.batchId);
                     applyGeneration(group.items[0]!, group.items);
@@ -745,6 +802,7 @@ export default function GeneratePage() {
                           createdAt={item.createdAt}
                           label={`seed ${item.seed === null ? "—" : String(item.seed)}`}
                           active={item.id === activeId}
+                          mediaKind={item.mediaKind}
                           onOpen={() => applyGeneration(item, group.items)}
                           actions={
                             <>
@@ -1065,6 +1123,12 @@ export default function GeneratePage() {
               />
             </label>
 
+            {isWanT2VModel(modelId) ? (
+              <p className="text-meta text-ink-subtle">
+                Wan2.2 T2V is text-to-video only here — reference img2img is
+                disabled. Clips are ~5 seconds at 16 fps.
+              </p>
+            ) : (
             <div className="flex flex-col gap-1.5">
               <span className="text-label text-ink-muted">
                 Reference image{" "}
@@ -1138,6 +1202,7 @@ export default function GeneratePage() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="flex flex-col gap-2">
               <button
@@ -1224,20 +1289,35 @@ export default function GeneratePage() {
                   ))}
                 </div>
               ) : activeId ? (
-                <button
-                  type="button"
-                  className="w-full overflow-hidden rounded-md border border-border shadow-sm transition-colors hover:border-border-strong"
-                  style={{ aspectRatio }}
-                  onClick={() => openLightbox(activeId)}
-                  aria-label="Open full view"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    className="size-full object-contain"
-                    src={`/api/images/generations/${activeId}/file`}
-                    alt={prompt || "Generated image"}
-                  />
-                </button>
+                activeMediaKind === "video" ? (
+                  <div
+                    className="w-full overflow-hidden rounded-md border border-border shadow-sm"
+                    style={{ aspectRatio }}
+                  >
+                    <video
+                      className="size-full object-contain"
+                      src={`/api/images/generations/${activeId}/file`}
+                      controls
+                      playsInline
+                      preload="metadata"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="w-full overflow-hidden rounded-md border border-border shadow-sm transition-colors hover:border-border-strong"
+                    style={{ aspectRatio }}
+                    onClick={() => openLightbox(activeId)}
+                    aria-label="Open full view"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      className="size-full object-contain"
+                      src={`/api/images/generations/${activeId}/file`}
+                      alt={prompt || "Generated image"}
+                    />
+                  </button>
+                )
               ) : busy ? (
                 <div
                   className="w-full rounded-md border border-dashed border-border bg-surface-sunken"

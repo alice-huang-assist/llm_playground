@@ -10,9 +10,14 @@ import {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
+  isFluxModel,
+  isWanT2VHighNoiseModel,
+  isWanT2VModel,
   isZImageModel,
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
+  wanT2VCanonicalModel,
+  wanT2VLowNoiseSibling,
 } from "@/lib/providers/comfyui-shared";
 import {
   progressPercentFromCounts,
@@ -24,9 +29,14 @@ export {
   COMFYUI_PROVIDER_ID,
   COMFYUI_PROVIDER_NAME,
   DEFAULT_COMFYUI_BASE_URL,
+  isFluxModel,
+  isWanT2VHighNoiseModel,
+  isWanT2VModel,
   isZImageModel,
   normalizeComfyBaseUrl,
   resolveComfyBaseUrl,
+  wanT2VCanonicalModel,
+  wanT2VLowNoiseSibling,
 };
 
 export type { ImageGenerationProgress };
@@ -57,9 +67,13 @@ export interface ComfyImg2ImgRequest extends ComfyTxt2ImgRequest {
   denoisingStrength: number;
 }
 
+export type ComfyMediaKind = "image" | "video";
+
 export interface ComfyTxt2ImgResult {
   imageBase64: string;
   seed: number;
+  /** Defaults to image (PNG). Wan T2V returns video (MP4). */
+  mediaKind?: ComfyMediaKind;
 }
 
 export function getComfyBaseUrl(): string {
@@ -93,6 +107,338 @@ const Z_IMAGE_TEXT_ENCODER = "qwen_3_4b.safetensors";
 const Z_IMAGE_VAE = "ae.safetensors";
 const Z_IMAGE_SAMPLING_SHIFT = 3;
 const Z_IMAGE_SCHEDULER = "simple";
+
+/** Flux.1 D split-file companions (Fluxed Up / official Flux Dev). */
+const FLUX_CLIP_L = "clip_l.safetensors";
+const FLUX_T5 = "t5xxl_fp16.safetensors";
+const FLUX_VAE = "ae.safetensors";
+/** Fluxed Up recommended scheduler; KSampler CFG must stay 1 with FluxGuidance. */
+const FLUX_SCHEDULER = "beta";
+const FLUX_KSAMPLER_CFG = 1;
+
+/**
+ * NexBlend 01 Asian Realistic LoRA (Flux.1 D) — Civitai 2545815 / v2.0.
+ * Place under ComfyUI `models/loras/Flux/`.
+ */
+const FLUX_NEXBLEND_LORA =
+  "Flux/NexBlend 01 Asian Realistic Flux.safetensors";
+const FLUX_NEXBLEND_STRENGTH = 0.8;
+const FLUX_NEXBLEND_TRIGGER = "nexblend";
+
+/** Comfy-Org Wan 2.2 T2V split-file companions (see docs.comfy.org Wan2.2). */
+const WAN_T2V_CLIP = "umt5_xxl_fp16.safetensors";
+const WAN_T2V_VAE = "wan_2.1_vae.safetensors";
+const WAN_T2V_SCHEDULER = "simple";
+const WAN_T2V_SAMPLING_SHIFT = 5;
+/** Official template: 5s @ 16fps → length = floor(5*16)+1 = 81. */
+const WAN_T2V_FPS = 16;
+const WAN_T2V_LENGTH = 81;
+
+/** Ensure the NexBlend trigger word is present in the positive prompt. */
+export function withFluxNexblendTrigger(prompt: string): string {
+  if (/\bnexblend\b/i.test(prompt)) return prompt;
+  const trimmed = prompt.trim();
+  return trimmed === ""
+    ? FLUX_NEXBLEND_TRIGGER
+    : `${FLUX_NEXBLEND_TRIGGER} ${trimmed}`;
+}
+
+/**
+ * MoE text-to-video graph matching ComfyUI's Wan2.2 14B T2V template
+ * (Lightning LoRA off): high-noise then low-noise KSamplerAdvanced → CreateVideo.
+ */
+function buildWanT2VWorkflow(
+  request: ComfyTxt2ImgRequest,
+): Record<string, unknown> {
+  const highNoise = wanT2VCanonicalModel(request.model);
+  const lowNoise = wanT2VLowNoiseSibling(highNoise);
+  const splitStep = Math.max(1, Math.floor(request.steps / 2));
+
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: highNoise,
+        weight_dtype: "default",
+      },
+    },
+    "2": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: lowNoise,
+        weight_dtype: "default",
+      },
+    },
+    "3": {
+      class_type: "CLIPLoader",
+      inputs: {
+        clip_name: WAN_T2V_CLIP,
+        type: "wan",
+        device: "default",
+      },
+    },
+    "4": {
+      class_type: "VAELoader",
+      inputs: { vae_name: WAN_T2V_VAE },
+    },
+    "5": {
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["1", 0], shift: WAN_T2V_SAMPLING_SHIFT },
+    },
+    "6": {
+      class_type: "ModelSamplingSD3",
+      inputs: { model: ["2", 0], shift: WAN_T2V_SAMPLING_SHIFT },
+    },
+    "7": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.prompt, clip: ["3", 0] },
+    },
+    "8": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["3", 0] },
+    },
+    "9": {
+      class_type: "EmptyHunyuanLatentVideo",
+      inputs: {
+        width: request.width,
+        height: request.height,
+        length: WAN_T2V_LENGTH,
+        batch_size: 1,
+      },
+    },
+    "10": {
+      class_type: "KSamplerAdvanced",
+      inputs: {
+        add_noise: "enable",
+        noise_seed: request.seed,
+        steps: request.steps,
+        cfg: request.cfgScale,
+        sampler_name: request.sampler,
+        scheduler: WAN_T2V_SCHEDULER,
+        start_at_step: 0,
+        end_at_step: splitStep,
+        return_with_leftover_noise: "enable",
+        model: ["5", 0],
+        positive: ["7", 0],
+        negative: ["8", 0],
+        latent_image: ["9", 0],
+      },
+    },
+    "11": {
+      class_type: "KSamplerAdvanced",
+      inputs: {
+        add_noise: "disable",
+        noise_seed: 0,
+        steps: request.steps,
+        cfg: request.cfgScale,
+        sampler_name: request.sampler,
+        scheduler: WAN_T2V_SCHEDULER,
+        start_at_step: splitStep,
+        end_at_step: request.steps,
+        return_with_leftover_noise: "disable",
+        model: ["6", 0],
+        positive: ["7", 0],
+        negative: ["8", 0],
+        latent_image: ["10", 0],
+      },
+    },
+    "12": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["11", 0], vae: ["4", 0] },
+    },
+    "13": {
+      class_type: "CreateVideo",
+      inputs: {
+        images: ["12", 0],
+        fps: WAN_T2V_FPS,
+      },
+    },
+    "14": {
+      class_type: "SaveVideo",
+      inputs: {
+        video: ["13", 0],
+        filename_prefix: "llm_playground_wan_t2v",
+        format: "auto",
+        codec: "auto",
+      },
+    },
+  };
+}
+
+/**
+ * UNETLoader + DualCLIP(flux) + NexBlend LoRA + VAE + FluxGuidance +
+ * EmptySD3Latent → KSampler(cfg=1, scheduler=beta) → VAEDecode → SaveImage.
+ */
+function buildFluxTxt2ImgWorkflow(
+  request: ComfyTxt2ImgRequest,
+): Record<string, unknown> {
+  const prompt = withFluxNexblendTrigger(request.prompt);
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: request.model,
+        weight_dtype: "default",
+      },
+    },
+    "2": {
+      class_type: "DualCLIPLoader",
+      inputs: {
+        clip_name1: FLUX_CLIP_L,
+        clip_name2: FLUX_T5,
+        type: "flux",
+        device: "default",
+      },
+    },
+    "3": {
+      class_type: "VAELoader",
+      inputs: { vae_name: FLUX_VAE },
+    },
+    "4": {
+      class_type: "LoraLoader",
+      inputs: {
+        model: ["1", 0],
+        clip: ["2", 0],
+        lora_name: FLUX_NEXBLEND_LORA,
+        strength_model: FLUX_NEXBLEND_STRENGTH,
+        strength_clip: FLUX_NEXBLEND_STRENGTH,
+      },
+    },
+    "5": {
+      class_type: "EmptySD3LatentImage",
+      inputs: {
+        width: request.width,
+        height: request.height,
+        batch_size: 1,
+      },
+    },
+    "6": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: prompt, clip: ["4", 1] },
+    },
+    "7": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["4", 1] },
+    },
+    "8": {
+      class_type: "FluxGuidance",
+      inputs: { conditioning: ["6", 0], guidance: request.cfgScale },
+    },
+    "9": {
+      class_type: "KSampler",
+      inputs: {
+        seed: request.seed,
+        steps: request.steps,
+        cfg: FLUX_KSAMPLER_CFG,
+        sampler_name: request.sampler,
+        scheduler: FLUX_SCHEDULER,
+        denoise: 1,
+        model: ["4", 0],
+        positive: ["8", 0],
+        negative: ["7", 0],
+        latent_image: ["5", 0],
+      },
+    },
+    "10": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["9", 0], vae: ["3", 0] },
+    },
+    "11": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "llm_playground_flux",
+        images: ["10", 0],
+      },
+    },
+  };
+}
+
+/**
+ * Same Flux + NexBlend stack as txt2img, latent from LoadImage + VAEEncode.
+ */
+function buildFluxImg2ImgWorkflow(
+  request: ComfyImg2ImgRequest,
+): Record<string, unknown> {
+  const prompt = withFluxNexblendTrigger(request.prompt);
+  return {
+    "1": {
+      class_type: "UNETLoader",
+      inputs: {
+        unet_name: request.model,
+        weight_dtype: "default",
+      },
+    },
+    "2": {
+      class_type: "DualCLIPLoader",
+      inputs: {
+        clip_name1: FLUX_CLIP_L,
+        clip_name2: FLUX_T5,
+        type: "flux",
+        device: "default",
+      },
+    },
+    "3": {
+      class_type: "VAELoader",
+      inputs: { vae_name: FLUX_VAE },
+    },
+    "4": {
+      class_type: "LoraLoader",
+      inputs: {
+        model: ["1", 0],
+        clip: ["2", 0],
+        lora_name: FLUX_NEXBLEND_LORA,
+        strength_model: FLUX_NEXBLEND_STRENGTH,
+        strength_clip: FLUX_NEXBLEND_STRENGTH,
+      },
+    },
+    "5": {
+      class_type: "LoadImage",
+      inputs: { image: request.imageName },
+    },
+    "6": {
+      class_type: "VAEEncode",
+      inputs: { pixels: ["5", 0], vae: ["3", 0] },
+    },
+    "7": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: prompt, clip: ["4", 1] },
+    },
+    "8": {
+      class_type: "CLIPTextEncode",
+      inputs: { text: request.negativePrompt, clip: ["4", 1] },
+    },
+    "9": {
+      class_type: "FluxGuidance",
+      inputs: { conditioning: ["7", 0], guidance: request.cfgScale },
+    },
+    "10": {
+      class_type: "KSampler",
+      inputs: {
+        seed: request.seed,
+        steps: request.steps,
+        cfg: FLUX_KSAMPLER_CFG,
+        sampler_name: request.sampler,
+        scheduler: FLUX_SCHEDULER,
+        denoise: request.denoisingStrength,
+        model: ["4", 0],
+        positive: ["9", 0],
+        negative: ["8", 0],
+        latent_image: ["6", 0],
+      },
+    },
+    "11": {
+      class_type: "VAEDecode",
+      inputs: { samples: ["10", 0], vae: ["3", 0] },
+    },
+    "12": {
+      class_type: "SaveImage",
+      inputs: {
+        filename_prefix: "llm_playground_flux_i2i",
+        images: ["11", 0],
+      },
+    },
+  };
+}
 
 /**
  * UNETLoader + CLIP(lumina2) + VAE + ModelSamplingAuraFlow + EmptySD3Latent →
@@ -248,13 +594,19 @@ function buildZImageImg2ImgWorkflow(
 /**
  * Fixed CheckpointLoader → encode → EmptyLatent → KSampler → VAEDecode → SaveImage
  * workflow. Node ids stay stable so tests can assert shaping. SD3 checkpoints add
- * nodes 10/11 and rewire clip/model to them. Z-Image uses a separate UNET graph.
+ * nodes 10/11 and rewire clip/model to them. Z-Image and Flux use separate UNET graphs.
  */
 export function buildTxt2ImgWorkflow(
   request: ComfyTxt2ImgRequest,
 ): Record<string, unknown> {
   if (isZImageModel(request.model)) {
     return buildZImageTxt2ImgWorkflow(request);
+  }
+  if (isFluxModel(request.model)) {
+    return buildFluxTxt2ImgWorkflow(request);
+  }
+  if (isWanT2VModel(request.model)) {
+    return buildWanT2VWorkflow(request);
   }
   const sd3 = isSd3Checkpoint(request.model);
   const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
@@ -338,8 +690,16 @@ export function buildTxt2ImgWorkflow(
 export function buildImg2ImgWorkflow(
   request: ComfyImg2ImgRequest,
 ): Record<string, unknown> {
+  if (isWanT2VModel(request.model)) {
+    throw new Error(
+      "Wan2.2 T2V is text-to-video only in this app (no img2img). Clear the reference image.",
+    );
+  }
   if (isZImageModel(request.model)) {
     return buildZImageImg2ImgWorkflow(request);
+  }
+  if (isFluxModel(request.model)) {
+    return buildFluxImg2ImgWorkflow(request);
   }
   const sd3 = isSd3Checkpoint(request.model);
   const loadsExternalClip = sd3 && !sd3HasBundledClips(request.model);
@@ -464,8 +824,12 @@ async function listCheckpointNames(
   ).filter((name): name is string => typeof name === "string" && name !== "");
 }
 
-/** Best-effort Z-Image (and similar) entries from diffusion_models/. */
-async function listZImageDiffusionNames(
+/**
+ * Best-effort Z-Image / Flux / Wan T2V entries from diffusion_models/
+ * (split UNET families that need dedicated Comfy graphs). Wan lists only the
+ * high-noise expert; the low-noise twin is paired by filename at generate time.
+ */
+async function listSpecialDiffusionNames(
   baseUrl: string,
   signal?: AbortSignal,
 ): Promise<string[]> {
@@ -477,7 +841,11 @@ async function listZImageDiffusionNames(
     if (!Array.isArray(payload)) return [];
     return payload.filter(
       (name): name is string =>
-        typeof name === "string" && name !== "" && isZImageModel(name),
+        typeof name === "string" &&
+        name !== "" &&
+        (isZImageModel(name) ||
+          isFluxModel(name) ||
+          isWanT2VHighNoiseModel(name)),
     );
   } catch {
     return [];
@@ -489,10 +857,10 @@ export async function listComfyModels(
   signal?: AbortSignal,
 ): Promise<ComfyModel[]> {
   const checkpoints = await listCheckpointNames(baseUrl, signal);
-  const zImages = await listZImageDiffusionNames(baseUrl, signal);
+  const special = await listSpecialDiffusionNames(baseUrl, signal);
   const seen = new Set<string>();
   const merged: string[] = [];
-  for (const name of [...checkpoints, ...zImages]) {
+  for (const name of [...checkpoints, ...special]) {
     if (seen.has(name)) continue;
     seen.add(name);
     merged.push(name);
@@ -745,7 +1113,8 @@ async function runComfyWorkflow(
     let imageMeta: { filename: string; subfolder: string; type: string } | null =
       null;
 
-    for (let attempt = 0; attempt < 600; attempt += 1) {
+    // Video MoE runs can exceed 5+ minutes on a 4090; poll up to ~20 minutes.
+    for (let attempt = 0; attempt < 2400; attempt += 1) {
       if (signal?.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
@@ -810,10 +1179,16 @@ async function runComfyWorkflow(
       signal,
     });
     const bytes = Buffer.from(await viewResponse.arrayBuffer());
+    const mediaKind: ComfyMediaKind = /\.(mp4|webm|mov)$/i.test(
+      imageMeta.filename,
+    )
+      ? "video"
+      : "image";
 
     return {
       imageBase64: bytes.toString("base64"),
       seed,
+      mediaKind,
     };
   } finally {
     closeSocket();

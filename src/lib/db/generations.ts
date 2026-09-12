@@ -18,6 +18,8 @@ export interface GenerationSummary {
   denoisingStrength: number | null;
   /** Shared id for multi-image runs; null for single-image generations. */
   batchId: string | null;
+  /** Derived from on-disk extension (.mp4 → video). */
+  mediaKind: "image" | "video";
   createdAt: string;
 }
 
@@ -39,8 +41,9 @@ export interface GenerationInput {
   usedReference?: boolean;
   denoisingStrength?: number | null;
   batchId?: string | null;
-  /** Raw PNG (or other image) bytes. */
+  /** Raw PNG or video bytes. */
   imageBytes: Buffer;
+  mediaKind?: "image" | "video";
 }
 
 interface GenerationRow {
@@ -69,6 +72,10 @@ function generationsDir(): string {
   );
 }
 
+function mediaKindFromPath(filePath: string): "image" | "video" {
+  return /\.(mp4|webm|mov)$/i.test(filePath) ? "video" : "image";
+}
+
 function toSummary(row: GenerationRow): GenerationSummary {
   return {
     id: row.id,
@@ -91,6 +98,7 @@ function toSummary(row: GenerationRow): GenerationSummary {
       typeof row.batch_id === "string" && row.batch_id !== ""
         ? row.batch_id
         : null,
+    mediaKind: mediaKindFromPath(row.file_path),
     createdAt: row.created_at,
   };
 }
@@ -150,7 +158,8 @@ export function createGeneration(
   const now = new Date().toISOString();
   const dir = generationsDir();
   mkdirSync(dir, { recursive: true });
-  const absolutePath = path.join(dir, `${id}.png`);
+  const ext = input.mediaKind === "video" ? "mp4" : "png";
+  const absolutePath = path.join(dir, `${id}.${ext}`);
   writeFileSync(absolutePath, input.imageBytes);
 
   const usedReference = input.usedReference === true;

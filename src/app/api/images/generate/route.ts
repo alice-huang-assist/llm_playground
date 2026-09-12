@@ -60,6 +60,7 @@ function toSummary(generation: {
   usedReference: boolean;
   denoisingStrength: number | null;
   batchId: string | null;
+  mediaKind: "image" | "video";
   createdAt: string;
 }): GenerationSummary {
   return {
@@ -77,6 +78,7 @@ function toSummary(generation: {
     usedReference: generation.usedReference,
     denoisingStrength: generation.denoisingStrength,
     batchId: generation.batchId,
+    mediaKind: generation.mediaKind,
     createdAt: generation.createdAt,
   };
 }
@@ -207,6 +209,7 @@ export async function POST(request: Request) {
 
           let imageBase64: string;
           let resultSeed: number | null = seed;
+          let mediaKind: "image" | "video" = "image";
 
           try {
             if (providerId === FORGE_PROVIDER_ID) {
@@ -279,6 +282,7 @@ export async function POST(request: Request) {
               );
               imageBase64 = result.imageBase64;
               resultSeed = result.seed;
+              mediaKind = result.mediaKind ?? "image";
             } else {
               const result = await comfyTxt2Img(
                 {
@@ -298,6 +302,7 @@ export async function POST(request: Request) {
               );
               imageBase64 = result.imageBase64;
               resultSeed = result.seed;
+              mediaKind = result.mediaKind ?? "image";
             }
           } catch (error) {
             if (request.signal.aborted) {
@@ -330,6 +335,7 @@ export async function POST(request: Request) {
             denoisingStrength,
             batchId,
             imageBytes: Buffer.from(imageBase64, "base64"),
+            mediaKind,
           });
           finished.push(toSummary(generation));
         }

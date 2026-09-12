@@ -5,13 +5,19 @@ import {
   buildTxt2ImgWorkflow,
   comfyTxt2Img,
   comfyWebSocketUrl,
+  isFluxModel,
   isSd3Checkpoint,
+  isWanT2VHighNoiseModel,
+  isWanT2VModel,
   isZImageModel,
   listComfyModels,
   listComfySamplers,
   normalizeComfyBaseUrl,
   parseComfyProgressMessage,
   resolveComfyBaseUrl,
+  wanT2VCanonicalModel,
+  wanT2VLowNoiseSibling,
+  withFluxNexblendTrigger,
 } from "@/lib/providers/comfyui";
 
 afterEach(() => {
@@ -188,6 +194,86 @@ describe("buildTxt2ImgWorkflow", () => {
       },
     });
   });
+
+  it("wires Fluxed Up to DualCLIP, NexBlend LoRA, and FluxGuidance", () => {
+    const workflow = buildTxt2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "fluxedUpFluxNSFW_71FP16.safetensors",
+      steps: 28,
+      cfgScale: 3.5,
+      sampler: "dpmpp_2m",
+    });
+
+    expect(workflow).toMatchObject({
+      "1": {
+        class_type: "UNETLoader",
+        inputs: {
+          unet_name: "fluxedUpFluxNSFW_71FP16.safetensors",
+          weight_dtype: "default",
+        },
+      },
+      "2": {
+        class_type: "DualCLIPLoader",
+        inputs: {
+          clip_name1: "clip_l.safetensors",
+          clip_name2: "t5xxl_fp16.safetensors",
+          type: "flux",
+        },
+      },
+      "3": {
+        class_type: "VAELoader",
+        inputs: { vae_name: "ae.safetensors" },
+      },
+      "4": {
+        class_type: "LoraLoader",
+        inputs: {
+          model: ["1", 0],
+          clip: ["2", 0],
+          lora_name: "Flux/NexBlend 01 Asian Realistic Flux.safetensors",
+          strength_model: 0.8,
+          strength_clip: 0.8,
+        },
+      },
+      "5": { class_type: "EmptySD3LatentImage" },
+      "6": { inputs: { text: "nexblend a cat", clip: ["4", 1] } },
+      "7": { inputs: { text: "blur", clip: ["4", 1] } },
+      "8": {
+        class_type: "FluxGuidance",
+        inputs: { conditioning: ["6", 0], guidance: 3.5 },
+      },
+      "9": {
+        class_type: "KSampler",
+        inputs: {
+          seed: 42,
+          steps: 28,
+          cfg: 1,
+          sampler_name: "dpmpp_2m",
+          scheduler: "beta",
+          denoise: 1,
+          model: ["4", 0],
+          positive: ["8", 0],
+          negative: ["7", 0],
+          latent_image: ["5", 0],
+        },
+      },
+      "10": {
+        class_type: "VAEDecode",
+        inputs: { samples: ["9", 0], vae: ["3", 0] },
+      },
+    });
+  });
+});
+
+describe("withFluxNexblendTrigger", () => {
+  it("prefixes nexblend when missing", () => {
+    expect(withFluxNexblendTrigger("a portrait")).toBe("nexblend a portrait");
+  });
+
+  it("leaves prompts that already include the trigger", () => {
+    expect(withFluxNexblendTrigger("NexBlend studio light")).toBe(
+      "NexBlend studio light",
+    );
+  });
 });
 
 describe("isSd3Checkpoint", () => {
@@ -229,7 +315,137 @@ describe("isZImageModel", () => {
   });
 });
 
+describe("isFluxModel", () => {
+  it.each([
+    "fluxedUpFluxNSFW_71FP16.safetensors",
+    "fluxed_up_flux_nsfw.safetensors",
+    "flux1-dev.safetensors",
+    "flux1_dev_fp8.safetensors",
+    "FLUX.1-dev.safetensors",
+  ])("detects %s", (name) => {
+    expect(isFluxModel(name)).toBe(true);
+  });
+
+  it.each([
+    "sd_xl_base_1.0.safetensors",
+    "sd3.5_large.safetensors",
+    "z_image_turbo_bf16.safetensors",
+    "model.safetensors",
+  ])("ignores %s", (name) => {
+    expect(isFluxModel(name)).toBe(false);
+  });
+});
+
+describe("isWanT2VModel", () => {
+  it.each([
+    "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+    "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+    "Wan2.2-T2V-high_noise.safetensors",
+  ])("detects %s", (name) => {
+    expect(isWanT2VModel(name)).toBe(true);
+  });
+
+  it.each([
+    "wan2.2_i2v_high_noise_14B_fp16.safetensors",
+    "wan2.2_ti2v_5B_fp16.safetensors",
+    "flux1-dev.safetensors",
+  ])("ignores %s", (name) => {
+    expect(isWanT2VModel(name)).toBe(false);
+  });
+});
+
+describe("wanT2V pairing", () => {
+  const high = "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors";
+  const low = "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors";
+
+  it("canonicalizes to high_noise and derives the low sibling", () => {
+    expect(wanT2VCanonicalModel(low)).toBe(high);
+    expect(wanT2VLowNoiseSibling(high)).toBe(low);
+    expect(wanT2VLowNoiseSibling(low)).toBe(low);
+  });
+
+  it("lists only the high-noise expert", () => {
+    expect(isWanT2VHighNoiseModel(high)).toBe(true);
+    expect(isWanT2VHighNoiseModel(low)).toBe(false);
+  });
+});
+
+describe("buildTxt2ImgWorkflow Wan T2V", () => {
+  it("wires the MoE high/low graph with SaveVideo", () => {
+    const workflow = buildTxt2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+      width: 640,
+      height: 640,
+      steps: 20,
+      cfgScale: 3.5,
+      sampler: "euler",
+    });
+
+    expect(workflow).toMatchObject({
+      "1": {
+        class_type: "UNETLoader",
+        inputs: {
+          unet_name: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+        },
+      },
+      "2": {
+        class_type: "UNETLoader",
+        inputs: {
+          unet_name: "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
+        },
+      },
+      "3": {
+        class_type: "CLIPLoader",
+        inputs: {
+          clip_name: "umt5_xxl_fp16.safetensors",
+          type: "wan",
+        },
+      },
+      "4": {
+        class_type: "VAELoader",
+        inputs: { vae_name: "wan_2.1_vae.safetensors" },
+      },
+      "9": {
+        class_type: "EmptyHunyuanLatentVideo",
+        inputs: { width: 640, height: 640, length: 81 },
+      },
+      "10": {
+        class_type: "KSamplerAdvanced",
+        inputs: {
+          add_noise: "enable",
+          steps: 20,
+          end_at_step: 10,
+          sampler_name: "euler",
+          scheduler: "simple",
+        },
+      },
+      "11": {
+        class_type: "KSamplerAdvanced",
+        inputs: {
+          add_noise: "disable",
+          start_at_step: 10,
+          end_at_step: 20,
+        },
+      },
+      "13": { class_type: "CreateVideo", inputs: { fps: 16 } },
+      "14": { class_type: "SaveVideo" },
+    });
+  });
+});
+
 describe("buildImg2ImgWorkflow", () => {
+  it("rejects Wan T2V img2img", () => {
+    expect(() =>
+      buildImg2ImgWorkflow({
+        ...baseTxt2Img,
+        model: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+        imageName: "ref.png",
+        denoisingStrength: 0.5,
+      }),
+    ).toThrow(/text-to-video only/i);
+  });
+
   it("uses LoadImage + VAEEncode and the given denoise", () => {
     expect(
       buildImg2ImgWorkflow({
@@ -318,6 +534,50 @@ describe("buildImg2ImgWorkflow", () => {
       },
     });
   });
+
+  it("wires Flux img2img through DualCLIP, NexBlend LoRA, and VAEEncode", () => {
+    const workflow = buildImg2ImgWorkflow({
+      ...baseTxt2Img,
+      model: "fluxedUpFluxNSFW_71FP16.safetensors",
+      imageName: "ref.png",
+      denoisingStrength: 0.65,
+      cfgScale: 3.5,
+      sampler: "dpmpp_2m",
+    });
+
+    expect(workflow).toMatchObject({
+      "1": { class_type: "UNETLoader" },
+      "2": { class_type: "DualCLIPLoader", inputs: { type: "flux" } },
+      "3": { class_type: "VAELoader", inputs: { vae_name: "ae.safetensors" } },
+      "4": {
+        class_type: "LoraLoader",
+        inputs: {
+          lora_name: "Flux/NexBlend 01 Asian Realistic Flux.safetensors",
+          strength_model: 0.8,
+        },
+      },
+      "5": { class_type: "LoadImage", inputs: { image: "ref.png" } },
+      "6": {
+        class_type: "VAEEncode",
+        inputs: { pixels: ["5", 0], vae: ["3", 0] },
+      },
+      "9": {
+        class_type: "FluxGuidance",
+        inputs: { guidance: 3.5 },
+      },
+      "10": {
+        class_type: "KSampler",
+        inputs: {
+          denoise: 0.65,
+          cfg: 1,
+          scheduler: "beta",
+          model: ["4", 0],
+          latent_image: ["6", 0],
+          positive: ["9", 0],
+        },
+      },
+    });
+  });
 });
 
 describe("ComfyUI HTTP helpers", () => {
@@ -339,7 +599,7 @@ describe("ComfyUI HTTP helpers", () => {
     ]);
   });
 
-  it("merges Z-Image diffusion models into the listing", async () => {
+  it("merges Z-Image, Flux, and Wan T2V diffusion models into the listing", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.endsWith("/models/checkpoints")) {
@@ -348,6 +608,9 @@ describe("ComfyUI HTTP helpers", () => {
       if (url.endsWith("/models/diffusion_models")) {
         return Response.json([
           "z_image_turbo_bf16.safetensors",
+          "fluxedUpFluxNSFW_71FP16.safetensors",
+          "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+          "wan2.2_t2v_low_noise_14B_fp8_scaled.safetensors",
           "other_unet.safetensors",
         ]);
       }
@@ -359,6 +622,14 @@ describe("ComfyUI HTTP helpers", () => {
       {
         id: "z_image_turbo_bf16.safetensors",
         title: "z_image_turbo_bf16.safetensors",
+      },
+      {
+        id: "fluxedUpFluxNSFW_71FP16.safetensors",
+        title: "fluxedUpFluxNSFW_71FP16.safetensors",
+      },
+      {
+        id: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
+        title: "wan2.2_t2v_high_noise_14B_fp8_scaled.safetensors",
       },
     ]);
   });
