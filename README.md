@@ -80,16 +80,36 @@ Img2img is supported via an optional reference upload on `/generate`.
 
 1. Open **Images** from the chat header (or go to `/generate`).
 2. Choose provider **Forge** or **ComfyUI** and a model. ComfyUI lists shared
-   checkpoints plus Z-Image weights under
-   `vendors/ComfyUI/models/diffusion_models/` (needs matching
-   `text_encoders/qwen_3_4b.safetensors` and `vae/ae.safetensors`).
+   checkpoints plus split UNET weights under
+   `vendors/ComfyUI/models/diffusion_models/`:
+   - **Z-Image** — needs `text_encoders/qwen_3_4b.safetensors` and
+     `vae/ae.safetensors`
+   - **Flux / Fluxed Up** (e.g. `fluxedUpFluxNSFW_71FP16.safetensors`) — needs
+     `text_encoders/clip_l.safetensors`, `text_encoders/t5xxl_fp16.safetensors`,
+     and `vae/ae.safetensors` (no CLIP/VAE baked into the UNET). The Comfy
+     Flux graph also loads
+     `loras/Flux/NexBlend 01 Asian Realistic Flux.safetensors` at strength 0.8
+     and prefixes the `nexblend` trigger when missing.
+   - **Wan2.2 T2V** (Comfy-Org split files, e.g.
+     `wan2.2_t2v_high_noise_14B_fp16.safetensors`) — also needs the matching
+     `wan2.2_t2v_low_noise_…` twin in the same folder, plus
+     `text_encoders/umt5_xxl_fp16.safetensors` and
+     `vae/wan_2.1_vae.safetensors`. Use the
+     [Comfy-Org Wan 2.2 repack](https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged),
+     not the raw `Wan-AI/Wan2.2-T2V-A14B` training layout. **fp16** is faster;
+     `fp8_scaled` also runs (ComfyUI dequantizes on CPU — MPS cannot cast
+     Float8). Outputs ~5s MP4 (81 frames @ 16fps). Very large; unified memory
+     can still OOM.
 3. Enter a prompt (optional negative prompt). Adjust width, height, steps, CFG,
    sampler, and seed (empty seed = random). ComfyUI uses a fixed txt2img
-   workflow (scheduler `normal` for checkpoints, `simple` for Z-Image).
-   Selecting Z-Image applies steps 8 / CFG 1 / `res_multistep`. Optionally
-   attach a **reference image** for img2img (denoising strength appears);
-   clear it to return to text-to-image. History records that a reference was
-   used but does not re-hydrate the file.
+   workflow (scheduler `normal` for checkpoints, `simple` for Z-Image / Wan,
+   `beta` for Flux). Selecting Z-Image applies steps 8 / CFG 1 / `res_multistep`;
+   selecting Flux/Fluxed Up applies steps 28 / guidance 3.5 / `dpmpp_2m`
+   (CFG maps to FluxGuidance); selecting Wan T2V applies 640×640 / steps 20 /
+   CFG 3.5 / `euler`. Optionally attach a **reference image** for
+   img2img (denoising strength appears); clear it to return to text-to-image.
+   Wan T2V does not support reference img2img in this app.
+   History records that a reference was used but does not re-hydrate the file.
 4. Click **Generate**. **Stop** cancels the run; cancelled runs are not saved.
 5. History (right rail) stores successful generations on disk under
    `data/generations/` plus SQLite metadata (shared across providers). Click an
@@ -104,6 +124,7 @@ Img2img is supported via an optional reference upload on `/generate`.
 | Empty model list / “backend unreachable” | Confirm backends with `npm run backends:start`; check `vendors/logs/forge.log` and `comfyui.log`. First Forge boot can take several minutes. |
 | Models still empty after backends are up | Drop a `.safetensors` into `vendors/models/checkpoints/` (shared by both). Restart backends if they started before the file was added. |
 | Out of memory / crash on M4 | Stop one backend (`npm run backends:stop`, or kill a single PID under `vendors/run/`) and use one provider at a time; prefer smaller checkpoints. |
+| ComfyUI `Undefined type Float8_e4m3fn` | Restart ComfyUI after `install:backends` so `mps_fp8_compat` is linked. `fp8_scaled` UNETs then dequantize on CPU. Prefer the matching fp16 UNET when you have RAM. |
 | `install:backends` refuses to run | This path is **Apple Silicon only** (`darwin` + `arm64`). Use the manual setup above otherwise. |
 
 ## Explicitly out of scope

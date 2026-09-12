@@ -151,6 +151,17 @@ EOF
   link_checkpoint_dir "${FORGE_DIR}/models/Stable-diffusion"
 }
 
+link_comfy_custom_node() {
+  local name="$1"
+  local src="${ROOT}/scripts/comfy-custom-nodes/${name}"
+  local dest="${COMFY_DIR}/custom_nodes/${name}"
+  [[ -d "${src}" ]] || die "missing ComfyUI custom node at ${src}"
+  mkdir -p "${COMFY_DIR}/custom_nodes"
+  rm -rf "${dest}"
+  ln -s "${src}" "${dest}"
+  echo "→ linked ComfyUI custom node ${name}"
+}
+
 setup_comfy() {
   local py="$1"
   clone_or_update "${COMFY_REPO}" "${COMFY_DIR}"
@@ -171,6 +182,7 @@ setup_comfy() {
 
   mkdir -p "${COMFY_DIR}/models"
   link_checkpoint_dir "${COMFY_DIR}/models/checkpoints"
+  link_comfy_custom_node "mps_fp8_compat"
 }
 
 main() {

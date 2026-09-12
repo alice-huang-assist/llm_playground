@@ -20,6 +20,7 @@ export interface ImageLightboxItem {
   id: string;
   src: string;
   alt?: string;
+  kind?: "image" | "video";
   meta?: ImageLightboxMeta;
 }
 
@@ -180,12 +181,22 @@ export default function ImageLightbox({
             </button>
           )}
           <div className="flex min-h-0 flex-1 items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              className="max-h-[65vh] max-w-full rounded-md object-contain"
-              src={current.src}
-              alt={current.alt ?? "Generated image"}
-            />
+            {current.kind === "video" ? (
+              <video
+                className="max-h-[65vh] max-w-full rounded-md object-contain"
+                src={current.src}
+                controls
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                className="max-h-[65vh] max-w-full rounded-md object-contain"
+                src={current.src}
+                alt={current.alt ?? "Generated image"}
+              />
+            )}
           </div>
           {isGallery && (
             <button
@@ -233,8 +244,18 @@ export default function ImageLightbox({
                 }`}
                 onClick={() => onIndexChange(imageIndex)}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img className="size-14 object-cover" src={image.src} alt="" />
+                {image.kind === "video" ? (
+                  <video
+                    className="size-14 object-cover"
+                    src={image.src}
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img className="size-14 object-cover" src={image.src} alt="" />
+                )}
               </button>
             ))}
           </div>

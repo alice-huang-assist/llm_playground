@@ -31,6 +31,17 @@ data/generations/
 # Local Forge + ComfyUI clones, venvs, logs, shared checkpoints (Apple Silicon)
 vendors/
 
+# Model weights — never commit these even if they sit outside vendors/
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.gguf
+
+# Python bytecode from Comfy custom nodes
+__pycache__/
+*.py[cod]
+
 # Testing
 coverage/
 .nyc_output/

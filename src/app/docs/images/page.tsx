@@ -70,8 +70,8 @@ export default function ImagesDocsPage() {
   return (
     // Measure capped near 68 characters so prose stays readable in a wide
     // canvas. Expressed in rem rather than `ch`: the `ch` unit is the width of
-    // "0", which in Figtree is much wider than the average glyph — `68ch`
-    // measured out to ~86 characters per line, well past a comfortable measure.
+    // "0", which in IBM Plex Sans is wider than the average glyph — `68ch`
+    // measured out past a comfortable character count per line.
     <div className="mx-auto flex w-full max-w-[34rem] flex-col gap-10 px-6 py-10">
       <h1 className="font-display text-h1 text-ink">Images playground</h1>
       <Section title="Setup (bundled — Apple Silicon)">
@@ -158,18 +158,31 @@ export default function ImagesDocsPage() {
             Choose provider <strong>Forge</strong> or <strong>ComfyUI</strong>{" "}
             and a model. ComfyUI uses fixed workflows shipped with the app (no
             node editor): checkpoints via <Code>CheckpointLoaderSimple</Code>,
-            and <strong>Z-Image-Turbo</strong> via a dedicated UNET / CLIP / VAE
-            graph when the weights are present under ComfyUI{" "}
-            <Code>models/diffusion_models/</Code> (with{" "}
+            plus dedicated graphs for split UNETs under{" "}
+            <Code>models/diffusion_models/</Code> —{" "}
+            <strong>Z-Image-Turbo</strong> (needs{" "}
             <Code>text_encoders/qwen_3_4b.safetensors</Code> and{" "}
-            <Code>vae/ae.safetensors</Code>).
+            <Code>vae/ae.safetensors</Code>), <strong>Flux / Fluxed Up</strong>{" "}
+            (needs <Code>clip_l.safetensors</Code>,{" "}
+            <Code>t5xxl_fp16.safetensors</Code>, and <Code>ae.safetensors</Code>;
+            no CLIP/VAE baked into the UNET), and <strong>Wan2.2 T2V</strong>{" "}
+            (high-noise + low-noise split UNETs from{" "}
+            <ExternalLink href="https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged">
+              Comfy-Org/Wan_2.2_ComfyUI_Repackaged
+            </ExternalLink>
+            ; prefer fp16 UNETs plus <Code>umt5_xxl_fp16.safetensors</Code> and{" "}
+            <Code>wan_2.1_vae.safetensors</Code>; <Code>fp8_scaled</Code> also
+            runs via CPU dequant. Outputs MP4, not PNG).
           </li>
           <li>
             Enter a prompt (optional negative prompt). Adjust width, height,
             steps, CFG, sampler, and seed. Empty seed means random. Selecting
-            Z-Image applies steps 8 / CFG 1 / <Code>res_multistep</Code>. Comfy
-            scheduler is <Code>normal</Code> for checkpoints and{" "}
-            <Code>simple</Code> for Z-Image.
+            Z-Image applies steps 8 / CFG 1 / <Code>res_multistep</Code>; Flux /
+            Fluxed Up applies steps 28 / guidance 3.5 / <Code>dpmpp_2m</Code>{" "}
+            (CFG → FluxGuidance); Wan T2V applies 640×640 / steps 20 / CFG 3.5 /{" "}
+            <Code>euler</Code>. Comfy scheduler is <Code>normal</Code> for
+            checkpoints, <Code>simple</Code> for Z-Image and Wan, and{" "}
+            <Code>beta</Code> for Flux.
           </li>
           <li>
             Optional: attach a <strong>reference image</strong> to run img2img.
@@ -210,6 +223,15 @@ export default function ImagesDocsPage() {
           <li>
             <strong>install:backends refuses</strong> — Apple Silicon only. Use
             the manual setup above on other platforms.
+          </li>
+          <li>
+            <strong>
+              ComfyUI <Code>Undefined type Float8_e4m3fn</Code>
+            </strong>{" "}
+            — restart ComfyUI after <Code>install:backends</Code> so the{" "}
+            <Code>mps_fp8_compat</Code> node is linked. Then <Code>fp8_scaled</Code>{" "}
+            UNETs dequantize on CPU. Prefer the matching fp16 file when RAM
+            allows.
           </li>
         </ul>
 

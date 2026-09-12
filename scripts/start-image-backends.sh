@@ -34,6 +34,39 @@ is_running() {
   return 1
 }
 
+# Detach into a new session so the child survives the launching shell.
+# macOS has no setsid(1); Python's start_new_session=True calls setsid(2).
+start_detached() {
+  local workdir="$1"
+  local logfile="$2"
+  local pidfile="$3"
+  shift 3
+  /usr/bin/python3 - "$workdir" "$logfile" "$pidfile" "$@" <<'PY'
+import os
+import subprocess
+import sys
+
+workdir, logfile, pidfile, *cmd = sys.argv[1:]
+os.makedirs(os.path.dirname(logfile), exist_ok=True)
+os.makedirs(os.path.dirname(pidfile), exist_ok=True)
+env = os.environ.copy()
+env.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+with open(logfile, "ab", buffering=0) as log:
+    proc = subprocess.Popen(
+        cmd,
+        cwd=workdir,
+        stdin=subprocess.DEVNULL,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        env=env,
+    )
+with open(pidfile, "w", encoding="utf-8") as handle:
+    handle.write(str(proc.pid))
+print(proc.pid)
+PY
+}
+
 start_forge() {
   local pid_file="${PID_DIR}/forge.pid"
   if is_running "${pid_file}"; then
@@ -42,14 +75,8 @@ start_forge() {
   fi
   mkdir -p "${LOG_DIR}" "${PID_DIR}"
   echo "→ starting Forge on 127.0.0.1:7860 (log: ${LOG_DIR}/forge.log)"
-  (
-    cd "${FORGE_DIR}"
-    export PYTORCH_ENABLE_MPS_FALLBACK=1
-    # webui-user.sh supplies COMMANDLINE_ARGS (--api, port, Mac flags).
-    # macOS has no setsid(1); stop script frees ports as a fallback.
-    nohup bash ./webui.sh >"${LOG_DIR}/forge.log" 2>&1 &
-    echo $! >"${pid_file}"
-  )
+  start_detached "${FORGE_DIR}" "${LOG_DIR}/forge.log" "${pid_file}" \
+    bash ./webui.sh
   echo "  Forge pid $(cat "${pid_file}")"
 }
 
@@ -61,13 +88,8 @@ start_comfy() {
   fi
   mkdir -p "${LOG_DIR}" "${PID_DIR}"
   echo "→ starting ComfyUI on 127.0.0.1:8188 (log: ${LOG_DIR}/comfyui.log)"
-  (
-    cd "${COMFY_DIR}"
-    export PYTORCH_ENABLE_MPS_FALLBACK=1
-    nohup ./venv/bin/python main.py --listen 127.0.0.1 --port 8188 \
-      >"${LOG_DIR}/comfyui.log" 2>&1 &
-    echo $! >"${pid_file}"
-  )
+  start_detached "${COMFY_DIR}" "${LOG_DIR}/comfyui.log" "${pid_file}" \
+    ./venv/bin/python -u main.py --listen 127.0.0.1 --port 8188
   echo "  ComfyUI pid $(cat "${pid_file}")"
 }
 
